@@ -62,7 +62,7 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE); setPadding(0, 28, 0, 8)
         })
         updateStatus = TextView(this).apply {
-            text = "Installed version: $APP_VERSION"; textSize = 13f
+            text = "Installed version: ${BuildConfig.VERSION_NAME}"; textSize = 13f
             setTextColor(Color.rgb(180, 190, 205))
         }
         page.addView(updateStatus)
@@ -73,7 +73,7 @@ class MainActivity : Activity() {
         }
         page.addView(updateButton, params())
         page.addView(TextView(this).apply {
-            text = "\nSecurity note\nUpdates are checked against this project's official GitHub Releases. Android requires user approval to install. This app shell is not yet an emulator; native engine integration and device testing are pending."
+            text = "\nSecurity note\nUpdates are checked against this project's official GitHub Releases. The app opens the official release page; review the release and verify its publisher before installing. Android checks APK signing during installation. This app shell is not yet an emulator; native engine integration and device testing are pending."
             textSize = 13f; setTextColor(Color.rgb(180, 190, 205))
         })
         setContentView(ScrollView(this).apply { addView(page) })
@@ -86,12 +86,23 @@ class MainActivity : Activity() {
         thread {
             try {
                 val connection = (URL(RELEASES_API).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"; connectTimeout = 10000; readTimeout = 10000
+                    requestMethod = "GET"
+                    connectTimeout = 10000
+                    readTimeout = 10000
+                    instanceFollowRedirects = false
+                    useCaches = false
                     setRequestProperty("Accept", "application/vnd.github+json")
                     setRequestProperty("User-Agent", "PS5-Game-Hub-Android")
+                    setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+                }
+                val responseCode = connection.responseCode
+                if (responseCode != HttpURLConnection.HTTP_OK) {
+                    connection.disconnect()
+                    throw IllegalStateException("GitHub API returned HTTP $responseCode")
                 }
                 val response = connection.inputStream.bufferedReader().use { it.readText() }
                 connection.disconnect()
+
                 val releases = JSONArray(response)
                 if (releases.length() == 0) {
                     runOnUiThread {
@@ -101,37 +112,41 @@ class MainActivity : Activity() {
                     }
                     return@thread
                 }
+
                 val release = releases.getJSONObject(0)
-                val tag = release.optString("tag_name", "")
-                val pageUrl = release.optString("html_url", RELEASES_PAGE)
-                val notes = release.optString("body", "")
-                val assets = release.optJSONArray("assets")
-                var apkUrl: String? = null
-                if (assets != null) {
-                    for (i in 0 until assets.length()) {
-                        val asset = assets.getJSONObject(i)
-                        if (asset.optString("name").endsWith(".apk", ignoreCase = true)) {
-                            apkUrl = asset.optString("browser_download_url"); break
-                        }
-                    }
+                val tag = release.optString("tag_name", "").trim()
+                val pageUrl = release.optString("html_url", "")
+                val uri = Uri.parse(pageUrl)
+                val trustedReleaseUrl = uri.scheme == "https" &&
+                    uri.host == "github.com" &&
+                    uri.path?.startsWith("/loudply0-eng/PS5-Game-Hub-Android/releases/") == true
+
+                if (tag.isBlank() || !trustedReleaseUrl) {
+                    throw IllegalStateException("Release metadata failed validation")
                 }
+
+                val notes = release.optString("body", "").take(4000)
                 runOnUiThread {
-                    progress.visibility = View.GONE; updateButton.isEnabled = true
-                    if (tag.isBlank()) {
-                        updateStatus.text = "No published release found yet."
-                        return@runOnUiThread
-                    }
+                    progress.visibility = View.GONE
+                    updateButton.isEnabled = true
                     updateStatus.text = "Latest official release: $tag"
-                    AlertDialog.Builder(this).setTitle("Official release $tag")
-                        .setMessage("Review the release notes before downloading. Android will ask before installing.\n\n$notes")
+                    AlertDialog.Builder(this)
+                        .setTitle("Official release $tag")
+                        .setMessage(
+                            "Installed version: ${BuildConfig.VERSION_NAME}\nLatest release: $tag\n\n" +
+                                "Review the release notes and verify the APK publisher before installing. " +
+                                "The app will open only the official GitHub release page.\n\n$notes"
+                        )
                         .setNegativeButton("Close", null)
-                        .setPositiveButton(if (apkUrl != null) "Open APK download" else "Open release page") { _, _ ->
-                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl ?: pageUrl)))
-                        }.show()
+                        .setPositiveButton("Open official release") { _, _ ->
+                            startActivity(Intent(Intent.ACTION_VIEW, uri))
+                        }
+                        .show()
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    progress.visibility = View.GONE; updateButton.isEnabled = true
+                    progress.visibility = View.GONE
+                    updateButton.isEnabled = true
                     updateStatus.text = "Update check failed: " + (e.message ?: "network error")
                 }
             }
@@ -158,8 +173,6 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_GAME_FOLDER = 1001
-        private const val APP_VERSION = "0.1.0"
         private const val RELEASES_API = "https://api.github.com/repos/loudply0-eng/PS5-Game-Hub-Android/releases?per_page=1"
-        private const val RELEASES_PAGE = "https://github.com/loudply0-eng/PS5-Game-Hub-Android/releases"
     }
 }
