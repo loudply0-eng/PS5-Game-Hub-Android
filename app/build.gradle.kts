@@ -7,6 +7,10 @@ android {
     namespace = "com.ps5gamehub.android"
     compileSdk = 35
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         applicationId = "com.ps5gamehub.android"
         minSdk = 31
