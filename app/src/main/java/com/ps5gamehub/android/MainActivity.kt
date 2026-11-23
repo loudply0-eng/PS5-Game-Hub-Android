@@ -14,6 +14,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
+import java.io.ByteArrayOutputStream
 import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
@@ -100,8 +101,25 @@ class MainActivity : Activity() {
                     connection.disconnect()
                     throw IllegalStateException("GitHub API returned HTTP $responseCode")
                 }
-                val response = connection.inputStream.bufferedReader().use { it.readText() }
-                connection.disconnect()
+                val response = try {
+                    connection.inputStream.use { input ->
+                        val output = ByteArrayOutputStream()
+                        val buffer = ByteArray(8192)
+                        var totalBytes = 0
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            totalBytes += count
+                            if (totalBytes > MAX_RELEASE_RESPONSE_BYTES) {
+                                throw IllegalStateException("GitHub release response is too large")
+                            }
+                            output.write(buffer, 0, count)
+                        }
+                        output.toString(Charsets.UTF_8.name())
+                    }
+                } finally {
+                    connection.disconnect()
+                }
 
                 val releases = JSONArray(response)
                 if (releases.length() == 0) {
@@ -173,6 +191,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_GAME_FOLDER = 1001
+        private const val MAX_RELEASE_RESPONSE_BYTES = 1024 * 1024
         private const val RELEASES_API = "https://api.github.com/repos/loudply0-eng/PS5-Game-Hub-Android/releases?per_page=1"
     }
 }
