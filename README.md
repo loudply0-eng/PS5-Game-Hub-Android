@@ -26,3 +26,6 @@ Open this project in Android Studio with JDK 17 or newer. Install Android SDK Pl
 
 ## Legal and licensing
 Use only game dumps you own. This project does not include games, keys, firmware or proprietary system software. The upstream KytyPS5 Android port is GPL-2.0-only; any derived code and bundled third-party components must retain their applicable licenses. Review license obligations before distributing a combined APK.
+
+## Upstream engine
+The Android engine is developed separately at [tarek369/KytyPS5-Android](https://github.com/tarek369/KytyPS5-Android), branch `android-boot-wip`. Its contributor guide and GPL-2.0-only terms must be followed before integrating or redistributing engine code.
