@@ -14,7 +14,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
-import org.json.JSONObject
+import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.concurrent.thread
@@ -92,7 +92,16 @@ class MainActivity : Activity() {
                 }
                 val response = connection.inputStream.bufferedReader().use { it.readText() }
                 connection.disconnect()
-                val release = JSONObject(response)
+                val releases = JSONArray(response)
+                if (releases.length() == 0) {
+                    runOnUiThread {
+                        progress.visibility = View.GONE
+                        updateButton.isEnabled = true
+                        updateStatus.text = "No official release published yet."
+                    }
+                    return@thread
+                }
+                val release = releases.getJSONObject(0)
                 val tag = release.optString("tag_name", "")
                 val pageUrl = release.optString("html_url", RELEASES_PAGE)
                 val notes = release.optString("body", "")
@@ -150,7 +159,7 @@ class MainActivity : Activity() {
     companion object {
         private const val REQUEST_GAME_FOLDER = 1001
         private const val APP_VERSION = "0.1.0"
-        private const val RELEASES_API = "https://api.github.com/repos/loudply0-eng/PS5-Game-Hub-Android/releases/latest"
+        private const val RELEASES_API = "https://api.github.com/repos/loudply0-eng/PS5-Game-Hub-Android/releases?per_page=1"
         private const val RELEASES_PAGE = "https://github.com/loudply0-eng/PS5-Game-Hub-Android/releases"
     }
 }
