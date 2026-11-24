@@ -229,8 +229,7 @@ class MainActivity : Activity() {
                 if (location.isNullOrBlank() || hop == MAX_REDIRECTS) {
                     throw SecurityException("APK download exceeded the redirect limit or omitted Location.")
                 }
-                val nextUrl = URL(current, location)
-                current = UpdatePolicy.trustedDownloadUrl(nextUrl.toString())
+                current = UpdatePolicy.resolveTrustedRedirect(current, location)
                     ?: throw SecurityException("APK redirect is not on the HTTPS GitHub allowlist.")
             } else {
                 if (status !in 200..299) {
