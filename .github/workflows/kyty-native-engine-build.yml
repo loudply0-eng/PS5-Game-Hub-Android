@@ -1,6 +1,12 @@
 name: KytyPS5 Native Engine Build
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".gitmodules"
+      - "engine/**"
+      - ".github/workflows/kyty-native-engine-build.yml"
   workflow_dispatch:
 
 permissions:
