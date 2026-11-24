@@ -161,7 +161,7 @@ jobs:
           ./gradlew --no-daemon --stacktrace testDebugUnitTest assembleRelease \
             -PkytyNativeDir="$RUNNER_TEMP/kyty-native" \
             -PappVersion="$VERSION" \
-            -PappVersionCode="$GITHUB_RUN_NUMBER"
+            -PappVersionCode="$((100000 + GITHUB_RUN_NUMBER))"
           APK="app/build/outputs/apk/release/app-release.apk"
           test -s "$APK"
           AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
