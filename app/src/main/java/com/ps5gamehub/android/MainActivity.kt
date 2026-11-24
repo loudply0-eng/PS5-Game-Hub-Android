@@ -244,8 +244,16 @@ class MainActivity : Activity() {
     }
 
     private fun getJson(address: String): JSONObject {
-        val connection = (URL(address).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"; connectTimeout = 12000; readTimeout = 12000
+        // The release metadata endpoint is trusted only on the official GitHub API host.
+        val requested = URL(address)
+        if (requested.protocol != "https" || requested.host != "api.github.com") {
+            throw SecurityException("Update metadata URL is not the official GitHub API host.")
+        }
+        val connection = (requested.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 12000
+            readTimeout = 12000
+            instanceFollowRedirects = false
             setRequestProperty("Accept", "application/vnd.github+json")
             setRequestProperty("User-Agent", "PS5-Game-Hub-Android")
         }
@@ -253,7 +261,26 @@ class MainActivity : Activity() {
             if (connection.responseCode !in 200..299) {
                 throw IllegalStateException("GitHub API returned HTTP ${connection.responseCode}.")
             }
-            return JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+            val finalUrl = URL(connection.url.toString())
+            if (finalUrl.protocol != "https" || finalUrl.host != "api.github.com") {
+                throw SecurityException("Update metadata redirected away from the official GitHub API.")
+            }
+            val body = connection.inputStream.use { input ->
+                val output = java.io.ByteArrayOutputStream()
+                val buffer = ByteArray(8192)
+                var total = 0
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    total += count
+                    if (total > 2 * 1024 * 1024) {
+                        throw IllegalStateException("GitHub release metadata exceeds the size limit.")
+                    }
+                    output.write(buffer, 0, count)
+                }
+                output.toString(Charsets.UTF_8.name())
+            }
+            return JSONObject(body)
         } finally {
             connection.disconnect()
         }
