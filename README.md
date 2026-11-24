@@ -4,14 +4,14 @@ An Android game hub and integration layer for the experimental KytyPS5 Android e
 
 ## Current state
 
-The unified integration is under review and CI validation:
+The unified integration is in Draft review:
 - The maintained KytyPS5 Android launcher, game library, GPU-driver controls, and SDL3 `GameActivity` are preserved in the project-owned fork.
-- The verified in-app updater is integrated into the same launcher.
-- The production Android application ID is `com.ps5gamehub.android`, matching the existing Hub package.
-- Release builds require the existing production signing identity; debug builds are for validation only.
-- The parent native workflow now builds FFmpeg and the ARM64 KytyPS5 engine, then packages the unified Android app.
+- The in-app stable-release updater is integrated into that same launcher.
+- The production Android application ID is `com.ps5gamehub.android`.
+- The ARM64 native engine and FFmpeg compile successfully; the validation APK was independently checked for all six ELF64 AArch64 libraries.
+- A production Release workflow now builds a signed APK, verifies the signature against the existing app's SHA-256 certificate fingerprint, and uploads a signed Actions artifact. Branch builds do not publish public releases.
 
-**This is not yet a validated game-playing release.** Native compilation, final APK inspection, production certificate matching, installation/update testing, and game compatibility testing must all pass before release.
+**No production-signed APK has been delivered yet.** The original signing keystore and the installed app's certificate fingerprint must be configured in Actions before the signed build can pass. Device install/update and game compatibility tests also remain outstanding.
 
 ## Engine selected
 
@@ -31,17 +31,17 @@ The upstream project's published reference device is OnePlus Pad 3 (Snapdragon 8
 
 ## Build
 
-The integrated Android module lives at `engine/KytyPS5-Android/android` in the parent build workspace. The reproducible CI workflow uses Java 21, Android SDK 36, NDK 28.2, CMake, Ninja, glslangValidator, and the pinned FFmpeg build script. The CI artifact is an internal validation APK, not a production-signed release.
+The integrated Android module lives at `engine/KytyPS5-Android/android` in the parent build workspace. The reproducible workflow uses Java 21, Android SDK 36, NDK 28.2, CMake, Ninja, glslangValidator, and the pinned FFmpeg build script. The native validation workflow is not the user-facing release build.
 
-The in-app updater checks stable releases from this repository's GitHub Releases. Android still requires the user to approve installation. See [docs/UNIFIED_KYTYPS5_UPDATER_INTEGRATION.md](docs/UNIFIED_KYTYPS5_UPDATER_INTEGRATION.md) for release gates and current limitations.
+The signed production workflow builds Release, checks every native library and the original signing certificate, and uploads the APK artifact. Its source branch build does not create a public release. See [docs/PRODUCTION_RELEASE_SETUP.md](docs/PRODUCTION_RELEASE_SETUP.md) for the five required Actions secrets and exact setup instructions. The in-app updater checks the latest stable GitHub Release on startup and supports manual checks. Android always asks the user to approve installation.
 
 ## Remaining work
 
-1. Finish and inspect unified updater CI and native ARM64 build runs.
-2. Advance the parent repository's submodule gitlink to the exact reviewed fork commit.
-3. Verify the release APK certificate against the existing Hub production certificate.
-4. Test installation over the existing app and an in-app update on a physical Android device.
-5. Test real game compatibility on Adreno 725; publish only measured per-game results.
+1. Configure the original keystore and installed-app certificate fingerprint as GitHub Actions secrets.
+2. Complete the signed Release build and verify its certificate matches exactly.
+3. Install over the existing app and test an in-app update on a physical Android device.
+4. Test actual owned-game compatibility on Adreno 725; publish only measured per-game results.
+5. Complete PR review/merge and authorize a protected stable release tag.
 
 ## Legal and security
 
