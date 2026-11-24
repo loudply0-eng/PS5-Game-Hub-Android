@@ -24,7 +24,7 @@ These controls cannot be enabled from the repository file tree. A repository own
 
 ## Private repository separation
 
-A private repository is not a substitute for secret storage. Keep source that must remain confidential in a separately permissioned private repository, and keep signing credentials only in protected GitHub Environment secrets. Do not copy signing keys or tokens into either repository. The existing private `PS5-Windows-Hub-Core` repository is a separate Windows project and is not the private counterpart of this Android repository.
+A private repository is not a substitute for secret storage. This Android project also has a separate private companion repository, `PS5-Game-Hub-Android-Core`, for internal source and development. The public Android repository remains the CI/build surface. The separate `PS5-Windows-Hub-Core` repository belongs to the Windows project and is not part of this Android project. Keep signing credentials only in protected GitHub Environment secrets; never copy signing keys or tokens into either Android repository.
 
 ## Current verification limits
 
