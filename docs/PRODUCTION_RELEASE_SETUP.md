@@ -46,7 +46,9 @@ Paste the clipboard contents directly into the GitHub secret `ANDROID_KEYSTORE_B
 
 ## Build and retrieve the signed APK
 
-Once all five secrets are configured, push any new commit to `feat/full-kytyps5-native-build-20261124` (or run the workflow manually from GitHub Actions). The branch workflow builds and uploads `ps5-game-hub-production-apk-<run number>` as a private Actions artifact and does not publish a public release.
+The branch workflow already ran on commit `411d74cc040724483f5379ae54f33ec7616ce0cd` and stopped safely at the secrets check because the five signing values were empty. After the repository owner configures all five secrets, rerun [workflow run 45438436154](https://github.com/loudply0-eng/PS5-Game-Hub-Android/actions/runs/45438436154) from Actions (or ask the maintainer to rerun it). No source change is required. The branch workflow then builds and uploads `ps5-game-hub-production-apk-<run number>` as a private Actions artifact and does not publish a public release.
+
+The original keystore is essential. An APK contains the public certificate but not the private signing key, so the key cannot be reconstructed from the installed APK. If the original keystore and passwords are lost, this same package cannot be updated over an installation signed by the old key; the only clean migration is uninstalling the old app and installing a new first-party signing identity, which can remove local app data.
 
 The workflow refuses to upload the APK unless:
 - Gradle release signing is configured and succeeds.
