@@ -82,6 +82,8 @@ class MainActivity : Activity() {
             textSize = 13f; setTextColor(Color.rgb(180, 190, 205))
         })
         setContentView(ScrollView(this).apply { addView(page) })
+        // Check for a stable update automatically when the app opens; installation still requires user approval.
+        checkForUpdates()
     }
 
     private fun checkForUpdates() {
