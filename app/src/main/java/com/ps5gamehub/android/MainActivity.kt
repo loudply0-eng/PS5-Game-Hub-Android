@@ -33,7 +33,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingInstallFile = savedInstanceState?.getString(STATE_PENDING_INSTALL_FILE)
-            ?.let { File(File(cacheDir, UPDATE_DIRECTORY), it).takeIf(File::isFile) }
+            ?.let { name -> File(File(cacheDir, UPDATE_DIRECTORY), name).takeIf { it.isFile } }
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(28, 42, 28, 28)
@@ -151,15 +151,16 @@ class MainActivity : Activity() {
                 if (!updateDirectory.exists() && !updateDirectory.mkdirs()) {
                     throw IllegalStateException("Cannot create the private update cache.")
                 }
-                connection = openVerifiedDownloadConnection(downloadUrl)
-                val length = connection.contentLengthLong
+                val activeConnection = openVerifiedDownloadConnection(downloadUrl)
+                connection = activeConnection
+                val length = activeConnection.contentLengthLong
                 if (length <= 0L || length > MAX_APK_BYTES) {
                     throw IllegalStateException("APK size is missing or exceeds the safety limit.")
                 }
                 temp = File(updateDirectory, UPDATE_TEMP_FILE)
                 val digest = MessageDigest.getInstance("SHA-256")
                 var total = 0L
-                connection.inputStream.use { input ->
+                activeConnection.inputStream.use { input ->
                     FileOutputStream(temp).use { output ->
                         val buffer = ByteArray(64 * 1024)
                         while (true) {
@@ -293,8 +294,12 @@ class MainActivity : Activity() {
             setRequestProperty("User-Agent", "PS5-Game-Hub-Android")
         }
         try {
-            if (connection.responseCode !in 200..299) {
-                throw IllegalStateException("GitHub API returned HTTP ${connection.responseCode}.")
+            val status = connection.responseCode
+            if (status == 404) {
+                throw IllegalStateException("No official app release has been published yet.")
+            }
+            if (status !in 200..299) {
+                throw IllegalStateException("GitHub API returned HTTP $status.")
             }
             val finalUrl = URL(connection.url.toString())
             if (finalUrl.protocol != "https" || finalUrl.host != "api.github.com") {
