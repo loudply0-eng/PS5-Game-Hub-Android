@@ -180,7 +180,7 @@ jobs:
             "$ST/3rdparty/libadrenotools/src/hook/libgsl_alloc_hook.so"
           )
           for lib in "${files[@]}"; do
-            "$READELF" -h "$lib" | grep -Fq "Machine:                           AArch64" || {
+            "$READELF" -h "$lib" | grep -Eq 'Machine:[[:space:]]+AArch64' || {
               echo "Non-AArch64 native library: $lib"; exit 1;
             }
           done
@@ -202,6 +202,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_SIGNING_CERT_SHA256: ${{ secrets.ANDROID_SIGNING_CERT_SHA256 }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -222,7 +223,7 @@ jobs:
               echo "APK is missing required ARM64 library: $name"; exit 1;
             }
             unzip -p "$APK" "lib/arm64-v8a/$name" > "$RUNNER_TEMP/$name"
-            "$READELF" -h "$RUNNER_TEMP/$name" | grep -Fq "Machine:                           AArch64" || {
+            "$READELF" -h "$RUNNER_TEMP/$name" | grep -Eq 'Machine:[[:space:]]+AArch64' || {
               echo "APK contains a non-AArch64 library: $name"; exit 1;
             }
           done
