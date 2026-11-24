@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -14,9 +15,13 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
-import org.json.JSONArray
+import androidx.core.content.FileProvider
+import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
@@ -62,80 +67,219 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE); setPadding(0, 28, 0, 8)
         })
         updateStatus = TextView(this).apply {
-            text = "Installed version: $APP_VERSION"; textSize = 13f
+            text = "Installed version: ${installedVersionName()}"; textSize = 13f
             setTextColor(Color.rgb(180, 190, 205))
         }
         page.addView(updateStatus)
-        progress = ProgressBar(this).apply { visibility = View.GONE }
+        progress = ProgressBar(this).apply { visibility = View.GONE; isIndeterminate = true }
         page.addView(progress)
         updateButton = Button(this).apply {
             text = "Check for updates"; setOnClickListener { checkForUpdates() }
         }
         page.addView(updateButton, params())
         page.addView(TextView(this).apply {
-            text = "\nSecurity note\nUpdates are checked against this project's official GitHub Releases. Android requires user approval to install. This app shell is not yet an emulator; native engine integration and device testing are pending."
+            text = "\nUpdates are downloaded from this project's official GitHub Releases. The APK must include a GitHub SHA-256 asset digest. Android verifies the installed app's signing identity and asks you to approve installation. The app shell is not yet an emulator; native engine integration and device testing are pending."
             textSize = 13f; setTextColor(Color.rgb(180, 190, 205))
         })
         setContentView(ScrollView(this).apply { addView(page) })
     }
 
     private fun checkForUpdates() {
-        updateButton.isEnabled = false
-        progress.visibility = View.VISIBLE
-        updateStatus.text = "Checking official GitHub Releases…"
+        setBusy(true, "Checking the latest stable release…")
         thread {
             try {
-                val connection = (URL(RELEASES_API).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"; connectTimeout = 10000; readTimeout = 10000
-                    setRequestProperty("Accept", "application/vnd.github+json")
-                    setRequestProperty("User-Agent", "PS5-Game-Hub-Android")
+                val release = getJson(RELEASES_API)
+                if (release.optBoolean("draft") || release.optBoolean("prerelease")) {
+                    throw IllegalStateException("The latest release is not a stable published release.")
                 }
-                val response = connection.inputStream.bufferedReader().use { it.readText() }
-                connection.disconnect()
-                val releases = JSONArray(response)
-                if (releases.length() == 0) {
-                    runOnUiThread {
-                        progress.visibility = View.GONE
-                        updateButton.isEnabled = true
-                        updateStatus.text = "No official release published yet."
-                    }
+                val tag = release.optString("tag_name")
+                val latestVersion = parseVersion(tag)
+                    ?: throw IllegalStateException("Release tag is not a valid version: $tag")
+                val currentVersion = parseVersion(installedVersionName())
+                    ?: throw IllegalStateException("Installed app version is invalid.")
+                if (compareVersions(latestVersion, currentVersion) <= 0) {
+                    runOnUiThread { setBusy(false, "You are using the latest version (${installedVersionName()}).") }
                     return@thread
                 }
-                val release = releases.getJSONObject(0)
-                val tag = release.optString("tag_name", "")
-                val pageUrl = release.optString("html_url", RELEASES_PAGE)
-                val notes = release.optString("body", "")
+
                 val assets = release.optJSONArray("assets")
-                var apkUrl: String? = null
-                if (assets != null) {
-                    for (i in 0 until assets.length()) {
-                        val asset = assets.getJSONObject(i)
-                        if (asset.optString("name").endsWith(".apk", ignoreCase = true)) {
-                            apkUrl = asset.optString("browser_download_url"); break
-                        }
+                    ?: throw IllegalStateException("Release has no assets.")
+                var apk: JSONObject? = null
+                for (i in 0 until assets.length()) {
+                    val candidate = assets.getJSONObject(i)
+                    if (candidate.optString("name").endsWith(".apk", ignoreCase = true)) {
+                        apk = candidate
+                        break
                     }
                 }
+                val asset = apk ?: throw IllegalStateException("No APK asset is attached to this release.")
+                val digest = asset.optString("digest")
+                if (!digest.matches(Regex("^sha256:[0-9a-fA-F]{64}$"))) {
+                    throw IllegalStateException("Release APK has no valid GitHub SHA-256 digest. Update blocked for safety.")
+                }
+                val downloadUrl = asset.optString("browser_download_url")
+                val uri = Uri.parse(downloadUrl)
+                if (uri.scheme != "https" || uri.host != "github.com") {
+                    throw IllegalStateException("APK download host is not the official GitHub host.")
+                }
+                val notes = release.optString("body").take(2500)
                 runOnUiThread {
-                    progress.visibility = View.GONE; updateButton.isEnabled = true
-                    if (tag.isBlank()) {
-                        updateStatus.text = "No published release found yet."
-                        return@runOnUiThread
-                    }
-                    updateStatus.text = "Latest official release: $tag"
-                    AlertDialog.Builder(this).setTitle("Official release $tag")
-                        .setMessage("Review the release notes before downloading. Android will ask before installing.\n\n$notes")
-                        .setNegativeButton("Close", null)
-                        .setPositiveButton(if (apkUrl != null) "Open APK download" else "Open release page") { _, _ ->
-                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl ?: pageUrl)))
+                    setBusy(false, "Update available: $tag")
+                    AlertDialog.Builder(this)
+                        .setTitle("Update available — $tag")
+                        .setMessage("Current version: ${installedVersionName()}\nNew version: $tag\n\n$notes\n\nThe APK will be downloaded and checked before Android's installer opens.")
+                        .setNegativeButton("Later", null)
+                        .setPositiveButton("Download and install") { _, _ ->
+                            downloadAndInstall(downloadUrl, digest.removePrefix("sha256:"))
                         }.show()
                 }
             } catch (e: Exception) {
-                runOnUiThread {
-                    progress.visibility = View.GONE; updateButton.isEnabled = true
-                    updateStatus.text = "Update check failed: " + (e.message ?: "network error")
-                }
+                runOnUiThread { setBusy(false, "Update check failed: ${e.message ?: "network error"}") }
             }
         }
+    }
+
+    private fun downloadAndInstall(downloadUrl: String, expectedSha256: String) {
+        setBusy(true, "Downloading update…")
+        thread {
+            var temp: File? = null
+            try {
+                val connection = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 15000
+                    readTimeout = 30000
+                    instanceFollowRedirects = true
+                    setRequestProperty("User-Agent", "PS5-Game-Hub-Android")
+                    setRequestProperty("Accept", "application/octet-stream")
+                }
+                connection.connect()
+                if (connection.responseCode !in 200..299) {
+                    throw IllegalStateException("Download server returned HTTP ${connection.responseCode}.")
+                }
+                val finalHost = URL(connection.url.toString()).host
+                if (finalHost != "github.com" && finalHost != "objects.githubusercontent.com" &&
+                    finalHost != "release-assets.githubusercontent.com") {
+                    throw IllegalStateException("Unexpected APK download redirect host.")
+                }
+                val length = connection.contentLengthLong
+                if (length <= 0L || length > MAX_APK_BYTES) {
+                    throw IllegalStateException("APK size is missing or exceeds the safety limit.")
+                }
+                temp = File(cacheDir, "ps5-game-hub-update.apk.part")
+                val digest = MessageDigest.getInstance("SHA-256")
+                var total = 0L
+                connection.inputStream.use { input ->
+                    FileOutputStream(temp).use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            if (total > MAX_APK_BYTES) throw IllegalStateException("APK exceeds the safety limit.")
+                            digest.update(buffer, 0, count)
+                            output.write(buffer, 0, count)
+                        }
+                        output.fd.sync()
+                    }
+                }
+                connection.disconnect()
+                val actual = digest.digest().joinToString("") { "%02x".format(it) }
+                if (!actual.equals(expectedSha256, ignoreCase = true)) {
+                    throw SecurityException("APK SHA-256 mismatch. The downloaded update was rejected.")
+                }
+                val apkFile = File(cacheDir, "ps5-game-hub-update.apk")
+                if (apkFile.exists() && !apkFile.delete()) throw IllegalStateException("Cannot replace cached update.")
+                if (!temp.renameTo(apkFile)) throw IllegalStateException("Cannot finalize downloaded APK.")
+                temp = null
+
+                runOnUiThread {
+                    setBusy(false, "Download verified. Preparing Android installer…")
+                    if (android.os.Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
+                        pendingInstallFile = apkFile
+                        AlertDialog.Builder(this)
+                            .setTitle("Allow app updates")
+                            .setMessage("Android needs permission to install updates initiated by this app. Enable it on the next screen, then return here and tap Check for updates again.")
+                            .setPositiveButton("Open settings") { _, _ ->
+                                startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                    Uri.parse("package:$packageName")))
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    } else {
+                        openSystemInstaller(apkFile)
+                    }
+                }
+            } catch (e: Exception) {
+                temp?.delete()
+                runOnUiThread { setBusy(false, "Update download rejected: ${e.message ?: "unknown error"}") }
+            }
+        }
+    }
+
+    private var pendingInstallFile: File? = null
+
+    override fun onResume() {
+        super.onResume()
+        val pending = pendingInstallFile ?: return
+        if (android.os.Build.VERSION.SDK_INT < 26 || packageManager.canRequestPackageInstalls()) {
+            pendingInstallFile = null
+            openSystemInstaller(pending)
+        }
+    }
+
+    private fun openSystemInstaller(apkFile: File) {
+        try {
+            val contentUri = FileProvider.getUriForFile(this, "$packageName.fileprovider", apkFile)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(contentUri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(intent)
+            updateStatus.text = "Verified update handed to Android installer. Approve it to complete installation."
+        } catch (e: Exception) {
+            updateStatus.text = "Could not open Android installer: ${e.message}"
+        }
+    }
+
+    private fun getJson(address: String): JSONObject {
+        val connection = (URL(address).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"; connectTimeout = 12000; readTimeout = 12000
+            setRequestProperty("Accept", "application/vnd.github+json")
+            setRequestProperty("User-Agent", "PS5-Game-Hub-Android")
+        }
+        try {
+            if (connection.responseCode !in 200..299) {
+                throw IllegalStateException("GitHub API returned HTTP ${connection.responseCode}.")
+            }
+            return JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun installedVersionName(): String =
+        packageManager.getPackageInfo(packageName, 0).versionName ?: "0.0.0"
+
+    private fun parseVersion(value: String): List<Int>? {
+        val normalized = value.trim().removePrefix("v").substringBefore("-").substringBefore("+")
+        val parts = normalized.split(".")
+        if (parts.size !in 2..4 || parts.any { it.isEmpty() || it.length > 6 || it.any { c -> !c.isDigit() } }) return null
+        return parts.map { it.toIntOrNull() ?: return null }
+    }
+
+    private fun compareVersions(a: List<Int>, b: List<Int>): Int {
+        for (i in 0 until maxOf(a.size, b.size)) {
+            val left = a.getOrElse(i) { 0 }
+            val right = b.getOrElse(i) { 0 }
+            if (left != right) return left.compareTo(right)
+        }
+        return 0
+    }
+
+    private fun setBusy(busy: Boolean, message: String) {
+        updateButton.isEnabled = !busy
+        progress.visibility = if (busy) View.VISIBLE else View.GONE
+        updateStatus.text = message
     }
 
     private fun chooseGameFolder() {
@@ -158,8 +302,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_GAME_FOLDER = 1001
-        private const val APP_VERSION = "0.1.0"
-        private const val RELEASES_API = "https://api.github.com/repos/loudply0-eng/PS5-Game-Hub-Android/releases?per_page=1"
-        private const val RELEASES_PAGE = "https://github.com/loudply0-eng/PS5-Game-Hub-Android/releases"
+        private const val MAX_APK_BYTES = 700L * 1024L * 1024L
+        private const val RELEASES_API = "https://api.github.com/repos/loudply0-eng/PS5-Game-Hub-Android/releases/latest"
     }
 }
