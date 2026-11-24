@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.net.URL
 
 class UpdatePolicyTest {
     @Test
@@ -21,6 +22,16 @@ class UpdatePolicyTest {
         assertEquals(1, UpdatePolicy.compareVersions(listOf(1, 10, 0), listOf(1, 9, 9)))
         assertEquals(0, UpdatePolicy.compareVersions(listOf(1, 2, 0), listOf(1, 2)))
         assertEquals(-1, UpdatePolicy.compareVersions(listOf(0, 9, 9), listOf(1, 0, 0)))
+    }
+
+    @Test
+    fun validatesEveryRedirectTargetIncludingRelativeLocations() {
+        val base = URL("https://github.com/owner/repo/releases/download/v1.2.3/app.apk")
+        assertNotNull(UpdatePolicy.resolveTrustedRedirect(base, "https://objects.githubusercontent.com/assets/file"))
+        assertNotNull(UpdatePolicy.resolveTrustedRedirect(base, "/owner/repo/releases/download/v1.2.3/next.apk"))
+        assertNull(UpdatePolicy.resolveTrustedRedirect(base, "https://attacker.example/steal.apk"))
+        assertNull(UpdatePolicy.resolveTrustedRedirect(base, "http://github.com/insecure.apk"))
+        assertNull(UpdatePolicy.resolveTrustedRedirect(base, "//github.com.evil.example/file.apk"))
     }
 
     @Test
