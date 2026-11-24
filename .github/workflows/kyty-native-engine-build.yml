@@ -28,15 +28,19 @@ jobs:
       - name: Checkout project and pinned upstream engine
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          submodules: recursive
+          submodules: false
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify pinned engine revision
+      - name: Check out maintained unified KytyPS5 fork
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git -C "$ENGINE_DIR" rev-parse HEAD)" = "9ab8b82daf2de1f763491b005e1ed1b28f843bb7"
+          rm -rf "$ENGINE_DIR"
+          git clone --no-checkout https://github.com/loudply0-eng/KytyPS5-Android.git "$ENGINE_DIR"
+          git -C "$ENGINE_DIR" checkout --detach bcf4a3a08acb8ab801e69facebcfcbe411f948a7
+          git -C "$ENGINE_DIR" submodule update --init --recursive
+          test "$(git -C "$ENGINE_DIR" rev-parse HEAD)" = "bcf4a3a08acb8ab801e69facebcfcbe411f948a7"
           git -C "$ENGINE_DIR" submodule status --recursive
 
       - name: Install native build tools
