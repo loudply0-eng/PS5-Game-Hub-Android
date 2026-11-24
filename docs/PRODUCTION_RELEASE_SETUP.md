@@ -1,76 +1,71 @@
 # Production Android build and release
 
-The production workflow builds the full KytyPS5 ARM64 engine, packages the existing launcher and the secure in-app updater, signs the APK, checks the signing identity against the existing installed app, and uploads a signed APK artifact. A branch build does **not** publish a public release. A version tag (or an explicitly authorized manual publish from `main`) is required to publish GitHub Releases, which is the updater's stable update source.
+The production workflow compiles the pinned KytyPS5 ARM64 engine and FFmpeg, packages the existing KytyPS5 launcher/game library, integrates the verified in-app updater, signs the Android APK, and uploads a private GitHub Actions artifact. Branch builds do not publish a public GitHub Release.
 
-## Latest verified build status
+## Latest production build — passed
 
-- Native engine validation succeeded in [workflow run 45428650600](https://github.com/loudply0-eng/PS5-Game-Hub-Android/actions/runs/45428650600).
-- Artifact: `kytyps5-native-engine-validation` (artifact ID `14939885078`).
-- The artifact contains a **debug-only** APK with all six required ELF64 AArch64 libraries. APK SHA-256: `b6e85a1ee51df3cc652e511dbfc8fd29dbfffa129da22b06093b09aea781191e`.
-- This proves the pinned native engine and Android packaging build; it is **not** the signed production APK and must not be distributed as the final app.
-- The latest production workflow attempt, [run 45438754578](https://github.com/loudply0-eng/PS5-Game-Hub-Android/actions/runs/45438754578), stopped safely at the first signing-secret check. The log showed the required signing secret values were empty. No production APK was built or uploaded, and no public release or tag was created.
+- Workflow: [run 45438754578](https://github.com/loudply0-eng/PS5-Game-Hub-Android/actions/runs/45438754578)
+- Job: `Build signed KytyPS5 Game Hub production APK` — **success**.
+- Release version: `1.0.0`; Android versionCode: `100006`.
+- Artifact: `ps5-game-hub-production-apk-6`, artifact ID `14945288481`.
+- APK SHA-256: `ba68f4f95cbfedd818908af7a6fdc9b262fdde2e6b601aefdd3854565d0b4b76`.
+- The APK in the Actions artifact was independently compared byte-for-byte with the separately retrieved APK; the SHA-256 values match.
+- The artifact certificate report confirms a single RSA 3072-bit signer: `CN=PS5 Game Hub, OU=Android, O=PS5 Game Hub, C=IQ`. The workflow compared the APK signer SHA-256 with `ANDROID_SIGNING_CERT_SHA256` and passed.
+- Android build ran `testDebugUnitTest` and `assembleRelease` successfully.
+- The workflow verified package `com.ps5gamehub.android`, permission `android.permission.REQUEST_INSTALL_PACKAGES`, and these six ELF64 AArch64 libraries:
+  - `libmain.so`
+  - `libSDL3.so`
+  - `libhook_impl.so`
+  - `libmain_hook.so`
+  - `libfile_redirect_hook.so`
+  - `libgsl_alloc_hook.so`
+- The independent APK ZIP inspection also passed and confirmed all six shared libraries are ELF64 little-endian AArch64.
+- Public release publication was skipped deliberately (`publish_release=false`). No public tag or GitHub Release was created.
 
-## Required Actions secrets
+## Production signing identity
 
-In the repository, open **Settings → Secrets and variables → Actions → New repository secret** and configure all five values:
+A new dedicated PS5 Game Hub production signing identity was generated on the owner's Oracle server and added to the repository Actions secrets. Its signer identity is shown in the certificate report above. It is a **new** signing identity and cannot update an older installation signed with a different certificate.
 
-| Secret | Value |
-|---|---|
-| `ANDROID_KEYSTORE_BASE64` | Base64 encoding of the original production keystore file (JKS or PKCS12) |
-| `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
-| `ANDROID_KEY_ALIAS` | Original production signing key alias |
-| `ANDROID_KEY_PASSWORD` | Original signing key password |
-| `ANDROID_SIGNING_CERT_SHA256` | SHA-256 certificate fingerprint of the already-installed official app, 64 hex characters (colons accepted) |
+Required GitHub Actions secrets:
+- `ANDROID_KEYSTORE_BASE64`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+- `ANDROID_SIGNING_CERT_SHA256`
 
-**Do not create a replacement keystore.** A new certificate cannot update an existing installation signed by a different certificate. Never paste the keystore or passwords into a chat, issue, commit, workflow log, or repository file.
+The private keystore and password are stored outside the repository at the owner's server path:
+- `/home/opc/app-signing/ps5-game-hub-release.jks`
+- `/home/opc/app-signing/ps5-game-hub-release.password`
 
-### Prepare the original certificate fingerprint on Windows
+The owner should keep an encrypted offline backup of both files. Never commit the keystore, password, backup archive, or secret values to GitHub. Never paste them into chat.
 
-Use the exact APK currently installed on the phone. With USB debugging enabled and the phone connected, run:
+## In-app update behavior and publication gate
 
-```powershell
-$apkPath = (adb shell pm path com.ps5gamehub.android | Select-Object -First 1) -replace '^package:', ''
-adb pull $apkPath .\\existing-hub.apk
-```
+The KytyPS5 launcher preserves the game-library and launch flow. `MainActivity` invokes the updater automatically during `onCreate`, and the launcher panel exposes a manual **Check for updates** action.
 
-Find Android SDK Build Tools `apksigner.bat` and inspect the APK certificate:
+The updater:
+- checks the repository's latest stable GitHub Release;
+- ignores drafts and prereleases and requires a strict stable semantic version;
+- requires exactly one APK asset and GitHub's SHA-256 digest;
+- validates HTTPS download hosts and redirect hops;
+- enforces APK size and exact downloaded length, then verifies SHA-256 before installation;
+- passes the verified APK to Android's system package installer.
 
-```powershell
-$apksigner = Get-ChildItem "$env:LOCALAPPDATA\\Android\\Sdk\\build-tools\\*\\apksigner.bat" | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
-& $apksigner verify --verbose --print-certs .\\existing-hub.apk
-```
+**No public stable GitHub Release currently exists.** Therefore, until a first stable release is explicitly authorized and published, the in-app check will report that no official release is available. Once the first release is published, subsequent higher stable versions can be discovered and updated from inside the app.
 
-Copy the value after `Signer #1 certificate SHA-256 digest:` into `ANDROID_SIGNING_CERT_SHA256`. If the package is not installed or its APK cannot be pulled, use the exact original APK supplied by the app publisher. Do not substitute a debug APK.
+Android requires the user to approve installation in the system installer; an ordinary app cannot silently install its own update.
 
-### Encode the original keystore locally
+## Remaining physical-device validation
 
-In PowerShell, replace the path with the original production keystore path:
+The signed production APK has passed CI/build and static artifact checks, but it has not yet been installed or launched on the target phone in this workflow. Still required:
+- install the APK on the target Realme phone (remove any differently signed debug build first, if present);
+- confirm the launcher opens and scans the selected game folder;
+- confirm native KytyPS5 startup and Vulkan/Adreno behavior;
+- test an actual in-app update after a stable release is published;
+- test owned-game compatibility before claiming a particular game is playable.
 
-```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\\secure\\original-release.jks")) | Set-Clipboard
-```
+A successful Android build does not establish that commercial PS5 games are playable on the target device.
 
-Paste the clipboard contents directly into the GitHub secret `ANDROID_KEYSTORE_BASE64`. Enter the original three passwords/alias in their matching secrets. Keep the original keystore and a secure offline backup; never upload it to the repository.
+## Public release authorization
 
-## Build and retrieve the signed APK
-
-After all five repository Actions secrets are configured, rerun [production workflow run 45438754578](https://github.com/loudply0-eng/PS5-Game-Hub-Android/actions/runs/45438754578) from the Actions page. Use **Re-run all jobs** so the signing-secret validation runs again. The workflow then builds the full engine, tests the updater, signs the release APK, validates the certificate fingerprint, and uploads `ps5-game-hub-production-apk-<run number>` as a private Actions artifact. It does not publish a public release when run from this development branch with `publish_release=false`.
-
-The original keystore is essential. An APK contains the public certificate but not the private signing key, so the key cannot be reconstructed from the installed APK. If the original keystore and passwords are lost, this same package cannot be updated over an installation signed by the old key; the only clean migration is uninstalling the old app and installing a new first-party signing identity, which can remove local app data.
-
-The workflow refuses to upload the APK unless:
-- Gradle release signing is configured and succeeds.
-- The package name is exactly `com.ps5gamehub.android`.
-- `REQUEST_INSTALL_PACKAGES` is present.
-- All six expected libraries are present under `lib/arm64-v8a/` and are ELF64 AArch64.
-- The APK signer certificate SHA-256 exactly matches `ANDROID_SIGNING_CERT_SHA256`.
-
-## Publish and in-app update behavior
-
-The app checks the latest stable GitHub Release on launch and also offers a manual **Check for updates** action. Once an authorized stable release exists with exactly one APK asset and GitHub's SHA-256 asset digest, the app can download it, verify the digest, and hand it to Android's package installer. Android still asks the device owner to approve installation; Android does not permit an ordinary app to silently install its own update.
-
-A public release must be built from `main` and published with a protected `vX.Y.Z` tag or an explicitly authorized manual publish from `main`. Do not change tag-protection rulesets to bypass this check.
-
-## Device validation still required
-
-A matching certificate and successful signed build are necessary, but do not prove a working emulator on every device. Install/update behavior and actual owned-game compatibility must still be verified on the target phone before describing games as playable.
+Publishing `v1.0.0` requires a protected version tag or an explicitly authorized manual publish from `main`. Do not bypass tag protection, change rulesets, merge draft PRs, or publish a release without the repository owner's explicit authorization.
