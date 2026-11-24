@@ -17,6 +17,8 @@ jobs:
     name: Build and publish signed APK
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    environment:
+      name: android-production
     permissions:
       contents: write
     env:
@@ -109,3 +111,8 @@ jobs:
             app/build/outputs/apk/release/app-release.apk.sha256 \
             --title "PS5 Game Hub $GITHUB_REF_NAME" \
             --generate-notes
+
+      - name: Remove signing keystore
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/android-release-keystore.jks"
