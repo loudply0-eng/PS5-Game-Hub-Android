@@ -98,8 +98,12 @@ jobs:
           gradle --no-daemon --stacktrace assembleRelease \
             -PappVersion="$VERSION" \
             -PappVersionCode="$GITHUB_RUN_NUMBER"
-          cd app/build/outputs/apk/release
-          sha256sum app-release.apk > app-release.apk.sha256
+          APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          sha256sum "$APK" > "$APK.sha256"
 
       - name: Publish GitHub Release
         env:
