@@ -2,7 +2,7 @@
 
 ## Status
 
-This is an integration gate, not a release claim. The pinned KytyPS5 source currently builds a standalone APK. It is not yet the PS5 Game Hub application with its updater.
+This remains an integration gate, not a release claim. A maintained public fork now contains the unified launcher and updater implementation. Its integration PR is Draft #1: https://github.com/loudply0-eng/KytyPS5-Android/pull/1. CI and the native build are running; neither is considered passed until their final results are inspected.
 
 Verified source facts at upstream commit `9ab8b82daf2de1f763491b005e1ed1b28f843bb7`:
 
@@ -10,18 +10,18 @@ Verified source facts at upstream commit `9ab8b82daf2de1f763491b005e1ed1b28f843b
 - Existing hub application ID: `com.ps5gamehub.android`.
 - Upstream launcher is `com.kytyps5.android.MainActivity`; it owns the game-library UI and launches `GameActivity`.
 - Upstream manifest does not declare `REQUEST_INSTALL_PACKAGES` or a `FileProvider`.
-- Upstream Gradle signing is optional and falls back to debug signing when release credentials are absent.
-- The upstream launcher has no in-app release checker/downloader.
-- The existing hub updater is implemented in `app/src/main/java/com/ps5gamehub/android/MainActivity.kt` and `UpdatePolicy.kt`, but that activity is only a shell and does not launch KytyPS5.
+- The original upstream Gradle signing was optional and could fall back to debug signing; the maintained fork now requires the established `ANDROID_*` production signing environment for release tasks.
+- The original upstream launcher had no in-app release checker/downloader; the maintained fork now adds `InAppUpdater` to the KytyPS5 launcher while preserving the game-library UI.
+- The updater implementation is maintained in `loudply0-eng/KytyPS5-Android`, branch `feat/unified-hub-updater-20261124`, currently at `14cc6d9c584107c5de6ea6972d823db1df8f2332`.
 
-## Required integration architecture
+## Implemented integration architecture
 
 The final APK must be one application, not two separately installable APKs:
 
-1. Keep the upstream KytyPS5 game-library and SDL3 `GameActivity` implementation.
-2. Port the existing updater into the KytyPS5 launcher without replacing its game-library UI or breaking its existing worker lifecycle.
-3. Use the established package ID `com.ps5gamehub.android` for the production application. Do not ship a package-ID change as an update.
-4. Add the updater manifest requirements to the unified manifest:
+1. The maintained fork keeps the KytyPS5 game-library and SDL3 `GameActivity` implementation.
+2. The updater is integrated as a separate `InAppUpdater` component and attached to the existing launcher UI; the original game-library UI and engine activity remain in place.
+3. The maintained fork uses the established package ID `com.ps5gamehub.android` while retaining Kotlin namespace `com.kytyps5.android` to preserve source/activity references.
+4. The maintained fork adds the updater manifest requirements:
    - `android.permission.INTERNET`
    - `android.permission.REQUEST_INSTALL_PACKAGES`
    - a non-exported AndroidX `FileProvider` with authority `${applicationId}.fileprovider`
@@ -32,14 +32,14 @@ The final APK must be one application, not two separately installable APKs:
 7. Use a monotonically increasing `versionCode` and preserve the exact production signing certificate. Never create a replacement keystore or silently use a debug key for a release.
 8. Retain KytyPS5 GPL-2.0-only notices and provide the corresponding modified source when distributing the app.
 
-## Mandatory release gates
+## Mandatory release gates (not yet all passed)
 
 - [ ] Unified debug APK contains the real ARM64 KytyPS5 libraries and the KytyPS5 game-library UI.
 - [ ] Merged manifest contains the narrowly scoped updater provider and install permission.
 - [ ] APK application ID is exactly `com.ps5gamehub.android`.
 - [ ] Release build fails closed if production signing material is absent.
 - [ ] `apksigner` verifies the release APK and its certificate SHA-256 matches the established production certificate.
-- [ ] Unit tests cover semantic-version rejection, unsafe URLs, redirect host changes, redirect limits, invalid/missing digest, and download-size mismatch.
+- [ ] Current unit tests cover stable version parsing/comparison and HTTPS host/redirect policy. Additional tests for redirect-count limits, malformed/missing release digest, interrupted downloads, and content-length mismatch remain required.
 - [ ] Device test installs the first signed build, downloads a higher version from a test release, verifies the digest, invokes Android's installer, and confirms the update installs over the existing app while preserving app data.
 - [ ] No release or tag is published until explicitly authorized.
 
