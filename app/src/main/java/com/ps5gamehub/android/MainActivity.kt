@@ -32,6 +32,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingInstallFile = savedInstanceState?.getString(STATE_PENDING_INSTALL_FILE)
+            ?.let { File(File(cacheDir, UPDATE_DIRECTORY), it).takeIf(File::isFile) }
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(28, 42, 28, 28)
@@ -106,15 +108,13 @@ class MainActivity : Activity() {
 
                 val assets = release.optJSONArray("assets")
                     ?: throw IllegalStateException("Release has no assets.")
-                var apk: JSONObject? = null
-                for (i in 0 until assets.length()) {
-                    val candidate = assets.getJSONObject(i)
-                    if (candidate.optString("name").endsWith(".apk", ignoreCase = true)) {
-                        apk = candidate
-                        break
-                    }
+                val apkAssets = (0 until assets.length())
+                    .map { assets.getJSONObject(it) }
+                    .filter { it.optString("name").endsWith(".apk", ignoreCase = true) }
+                if (apkAssets.size != 1) {
+                    throw IllegalStateException("Release must contain exactly one APK asset; update blocked.")
                 }
-                val asset = apk ?: throw IllegalStateException("No APK asset is attached to this release.")
+                val asset = apkAssets.single()
                 val digest = asset.optString("digest")
                 if (!digest.matches(Regex("^sha256:[0-9a-fA-F]{64}$"))) {
                     throw IllegalStateException("Release APK has no valid GitHub SHA-256 digest. Update blocked for safety.")
@@ -145,29 +145,18 @@ class MainActivity : Activity() {
         setBusy(true, "Downloading update…")
         thread {
             var temp: File? = null
+            var connection: HttpURLConnection? = null
             try {
-                val connection = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"
-                    connectTimeout = 15000
-                    readTimeout = 30000
-                    instanceFollowRedirects = true
-                    setRequestProperty("User-Agent", "PS5-Game-Hub-Android")
-                    setRequestProperty("Accept", "application/octet-stream")
+                val updateDirectory = File(cacheDir, UPDATE_DIRECTORY)
+                if (!updateDirectory.exists() && !updateDirectory.mkdirs()) {
+                    throw IllegalStateException("Cannot create the private update cache.")
                 }
-                connection.connect()
-                if (connection.responseCode !in 200..299) {
-                    throw IllegalStateException("Download server returned HTTP ${connection.responseCode}.")
-                }
-                val finalHost = URL(connection.url.toString()).host
-                if (finalHost != "github.com" && finalHost != "objects.githubusercontent.com" &&
-                    finalHost != "release-assets.githubusercontent.com") {
-                    throw IllegalStateException("Unexpected APK download redirect host.")
-                }
+                connection = openVerifiedDownloadConnection(downloadUrl)
                 val length = connection.contentLengthLong
                 if (length <= 0L || length > MAX_APK_BYTES) {
                     throw IllegalStateException("APK size is missing or exceeds the safety limit.")
                 }
-                temp = File(cacheDir, "ps5-game-hub-update.apk.part")
+                temp = File(updateDirectory, UPDATE_TEMP_FILE)
                 val digest = MessageDigest.getInstance("SHA-256")
                 var total = 0L
                 connection.inputStream.use { input ->
@@ -184,12 +173,12 @@ class MainActivity : Activity() {
                         output.fd.sync()
                     }
                 }
-                connection.disconnect()
                 val actual = digest.digest().joinToString("") { "%02x".format(it) }
+                if (total != length) throw IllegalStateException("Downloaded APK size does not match the server response.")
                 if (!actual.equals(expectedSha256, ignoreCase = true)) {
                     throw SecurityException("APK SHA-256 mismatch. The downloaded update was rejected.")
                 }
-                val apkFile = File(cacheDir, "ps5-game-hub-update.apk")
+                val apkFile = File(updateDirectory, UPDATE_APK_FILE)
                 if (apkFile.exists() && !apkFile.delete()) throw IllegalStateException("Cannot replace cached update.")
                 if (!temp.renameTo(apkFile)) throw IllegalStateException("Cannot finalize downloaded APK.")
                 temp = null
@@ -214,11 +203,57 @@ class MainActivity : Activity() {
             } catch (e: Exception) {
                 temp?.delete()
                 runOnUiThread { setBusy(false, "Update download rejected: ${e.message ?: "unknown error"}") }
+            } finally {
+                connection?.disconnect()
             }
         }
     }
 
+    private fun openVerifiedDownloadConnection(address: String): HttpURLConnection {
+        val allowedHosts = setOf(
+            "github.com",
+            "objects.githubusercontent.com",
+            "release-assets.githubusercontent.com"
+        )
+        var current = URL(address)
+        repeat(MAX_REDIRECTS + 1) { hop ->
+            if (current.protocol != "https" || current.host.lowercase() !in allowedHosts ||
+                current.userInfo != null || current.port !in setOf(-1, 443)) {
+                throw SecurityException("APK URL or redirect is not on the HTTPS GitHub allowlist.")
+            }
+            val connection = (current.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 15000
+                readTimeout = 30000
+                instanceFollowRedirects = false
+                setRequestProperty("User-Agent", "PS5-Game-Hub-Android")
+                setRequestProperty("Accept", "application/octet-stream")
+            }
+            val status = connection.responseCode
+            if (status in 300..399) {
+                val location = connection.getHeaderField("Location")
+                connection.disconnect()
+                if (location.isNullOrBlank() || hop == MAX_REDIRECTS) {
+                    throw SecurityException("APK download exceeded the redirect limit or omitted Location.")
+                }
+                current = URL(current, location)
+            } else {
+                if (status !in 200..299) {
+                    connection.disconnect()
+                    throw IllegalStateException("Download server returned HTTP $status.")
+                }
+                return connection
+            }
+        }
+        throw SecurityException("APK download redirect limit exceeded.")
+    }
+
     private var pendingInstallFile: File? = null
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        pendingInstallFile?.takeIf { it.isFile }?.let { outState.putString(STATE_PENDING_INSTALL_FILE, it.name) }
+        super.onSaveInstanceState(outState)
+    }
 
     override fun onResume() {
         super.onResume()
@@ -290,10 +325,9 @@ class MainActivity : Activity() {
         packageManager.getPackageInfo(packageName, 0).versionName ?: "0.0.0"
 
     private fun parseVersion(value: String): List<Int>? {
-        val normalized = value.trim().removePrefix("v").substringBefore("-").substringBefore("+")
-        val parts = normalized.split(".")
-        if (parts.size !in 2..4 || parts.any { it.isEmpty() || it.length > 6 || it.any { c -> !c.isDigit() } }) return null
-        return parts.map { it.toIntOrNull() ?: return null }
+        val match = Regex("^v?(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")
+            .matchEntire(value.trim()) ?: return null
+        return match.groupValues.drop(1).map { it.toIntOrNull() ?: return null }
     }
 
     private fun compareVersions(a: List<Int>, b: List<Int>): Int {
@@ -332,6 +366,11 @@ class MainActivity : Activity() {
     companion object {
         private const val REQUEST_GAME_FOLDER = 1001
         private const val MAX_APK_BYTES = 700L * 1024L * 1024L
+        private const val MAX_REDIRECTS = 5
+        private const val UPDATE_DIRECTORY = "update"
+        private const val UPDATE_TEMP_FILE = "app-update.apk.part"
+        private const val UPDATE_APK_FILE = "app-update.apk"
+        private const val STATE_PENDING_INSTALL_FILE = "pending_install_file"
         private const val RELEASES_API = "https://api.github.com/repos/loudply0-eng/PS5-Game-Hub-Android/releases/latest"
     }
 }
