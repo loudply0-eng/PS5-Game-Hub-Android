@@ -4,7 +4,7 @@ The in-app updater is a required product feature. The Android app now has an imp
 
 ## User experience
 
-- A visible **Check for updates** action queries the official repository's GitHub Releases API.
+- The app automatically checks for updates when it opens; a visible **Check for updates** action also allows a manual check. Both query the official repository's GitHub Releases API.
 - Only the latest stable published release is considered. Draft and prerelease releases are rejected.
 - The release tag is parsed as a numeric version and compared with the installed app version. Equal or older versions are not installed.
 - When a newer version exists, the app displays the version and release notes and asks the user before downloading.
@@ -21,7 +21,7 @@ Every stable release intended for in-app delivery must include:
 - A tag matching the app's numeric version format, such as `v0.2.0`.
 - APK signed with the same Android signing identity as the installed app. Android's package installer rejects a package whose signing identity is incompatible.
 
-The release process must protect the Android signing keystore and passwords in GitHub Actions secrets. Never commit signing keys, print secrets in logs, or reuse a debug signing key for public releases. The current CI workflow builds a debug APK for verification only; it does not publish a production release.
+The release process must protect the Android signing keystore and passwords in GitHub Actions secrets. Never commit signing keys, print secrets in logs, or reuse a debug signing key for public releases. The Android CI workflow builds a debug APK for verification. A separate tag-triggered release workflow builds and publishes a signed release APK. It requires these repository Actions secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`. Do not create a public release until those secrets contain the same long-term signing identity used for the installed app.
 
 ## Android platform behavior
 
@@ -39,4 +39,4 @@ The release process must protect the Android signing keystore and passwords in G
 
 ## Current status
 
-The in-app check, version comparison, APK download, SHA-256 verification, and Android installer handoff have been added on the feature branch. They have not yet been built or tested on a physical device. A published stable release with a correctly signed APK and GitHub asset digest is also required before the updater can install a real update.
+The in-app automatic check, manual check, version comparison, APK download, SHA-256 verification, and Android installer handoff are implemented on the feature branch. The debug CI build has passed, but the latest changes still need CI validation and physical-device testing. The signed release workflow is present but cannot publish until the four signing secrets are configured. A published stable release with a correctly signed APK and GitHub asset digest is required before the updater can install a real update.
