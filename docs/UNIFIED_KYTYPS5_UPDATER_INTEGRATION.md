@@ -1,52 +1,73 @@
 # Unified KytyPS5 App and In-App Updater Integration
 
-## Status
+## Current verified status
 
-This remains an integration gate, not a release claim. A maintained public fork now contains the unified launcher and updater implementation. Its integration PR is Draft #1: https://github.com/loudply0-eng/KytyPS5-Android/pull/1. CI and the native build are running; neither is considered passed until their final results are inspected.
+The maintained KytyPS5 fork integration has been merged into its default `android-boot-wip` branch through PR #1:
+https://github.com/loudply0-eng/KytyPS5-Android/pull/1
 
-Verified source facts at upstream commit `9ab8b82daf2de1f763491b005e1ed1b28f843bb7`:
+The parent repository's preparation work has also been merged into `main` through PR #4. The full unified application, native build pipeline, and production signing workflow are proposed by parent PR #5; the integration/release-gate documentation is proposed by PR #6.
 
-- Upstream Android application ID: `com.kytyps5.android`.
-- Existing hub application ID: `com.ps5gamehub.android`.
-- Upstream launcher is `com.kytyps5.android.MainActivity`; it owns the game-library UI and launches `GameActivity`.
-- Upstream manifest does not declare `REQUEST_INSTALL_PACKAGES` or a `FileProvider`.
-- The original upstream Gradle signing was optional and could fall back to debug signing; the maintained fork now requires the established `ANDROID_*` production signing environment for release tasks.
-- The original upstream launcher had no in-app release checker/downloader; the maintained fork now adds `InAppUpdater` to the KytyPS5 launcher while preserving the game-library UI.
-- The updater implementation is maintained in `loudply0-eng/KytyPS5-Android`, branch `feat/unified-hub-updater-20261124`, currently at `dac144daa519ef7f3a0857a16d9bca7cb6289f42`.
+## Verified source and identity
 
-## Implemented integration architecture
+- Reviewed upstream starting revision: `9ab8b82daf2de1f763491b005e1ed1b28f843bb7`.
+- Maintained project fork revision pinned by the parent workflow and submodule: `dac144daa519ef7f3a0857a16d9bca7cb6289f42`.
+- Upstream Android application ID was `com.kytyps5.android`.
+- Unified PS5 Game Hub package ID is `com.ps5gamehub.android`.
+- Kotlin namespace remains `com.kytyps5.android` to preserve existing source/activity references.
+- The KytyPS5 launcher retains its game library and SDL3 `GameActivity`; the updater is a separate `InAppUpdater` component attached to the launcher UI.
 
-The final APK must be one application, not two separately installable APKs:
+## Implemented unified application
 
-1. The maintained fork keeps the KytyPS5 game-library and SDL3 `GameActivity` implementation.
-2. The updater is integrated as a separate `InAppUpdater` component and attached to the existing launcher UI; the original game-library UI and engine activity remain in place.
-3. The maintained fork uses the established package ID `com.ps5gamehub.android` while retaining Kotlin namespace `com.kytyps5.android` to preserve source/activity references.
-4. The maintained fork adds the updater manifest requirements:
-   - `android.permission.INTERNET`
-   - `android.permission.REQUEST_INSTALL_PACKAGES`
-   - a non-exported AndroidX `FileProvider` with authority `${applicationId}.fileprovider`
-   - provider paths limited to the private `cache/update/` directory
-   - `android:allowBackup="false"` and `android:usesCleartextTraffic="false"`
-5. Preserve the updater trust policy: stable semantic versions only, exactly one APK asset, HTTPS-only allowlisted download hosts, validation of every redirect, bounded APK size and redirect count, exact Content-Length, SHA-256 verification, private cache, and Android system installer handoff.
-6. Automatically check for stable updates at launcher startup and keep a manual check action. Android still requires the user/system confirmation to complete APK installation; silent installation must not be claimed.
-7. Use a monotonically increasing `versionCode` and preserve the exact production signing certificate. Never create a replacement keystore or silently use a debug key for a release.
-8. Retain KytyPS5 GPL-2.0-only notices and provide the corresponding modified source when distributing the app.
+The production APK built successfully in workflow run [45438754578](https://github.com/loudply0-eng/PS5-Game-Hub-Android/actions/runs/45438754578).
 
-## Mandatory release gates (not yet all passed)
+Verified build facts:
 
-- [ ] Unified debug APK contains the real ARM64 KytyPS5 libraries and the KytyPS5 game-library UI.
-- [ ] Merged manifest contains the narrowly scoped updater provider and install permission.
-- [ ] APK application ID is exactly `com.ps5gamehub.android`.
-- [ ] Release build fails closed if production signing material is absent.
-- [ ] `apksigner` verifies the release APK and its certificate SHA-256 matches the established production certificate.
-- [ ] Current unit tests cover stable version parsing/comparison and HTTPS host/redirect policy. Additional tests for redirect-count limits, malformed/missing release digest, interrupted downloads, and content-length mismatch remain required.
-- [ ] Device test installs the first signed build, downloads a higher version from a test release, verifies the digest, invokes Android's installer, and confirms the update installs over the existing app while preserving app data.
-- [ ] No release or tag is published until explicitly authorized.
+- Release version: `1.0.0`; Android `versionCode=100006`.
+- Private Actions artifact: `ps5-game-hub-production-apk-6`, artifact ID `14945288481`.
+- APK SHA-256: `ba68f4f95cbfedd818908af7a6fdc9b262fdde2e6b601aefdd3854565d0b4b76`.
+- `testDebugUnitTest` and `assembleRelease` completed successfully.
+- The production APK was signed with the dedicated PS5 Game Hub RSA-3072 key, and the workflow verified that its SHA-256 certificate fingerprint matches the configured `ANDROID_SIGNING_CERT_SHA256` secret.
+- Package identity `com.ps5gamehub.android` and `android.permission.REQUEST_INSTALL_PACKAGES` were verified.
+- All six expected ELF64 AArch64 libraries were staged and checked:
+  - `libmain.so`
+  - `libSDL3.so`
+  - `libhook_impl.so`
+  - `libmain_hook.so`
+  - `libfile_redirect_hook.so`
+  - `libgsl_alloc_hook.so`
 
-## Current limitation
+This signed APK is a private Actions artifact, not a public GitHub Release.
 
-The current native-engine workflow builds `engine/KytyPS5-Android/android` as a standalone app. Its APK uses `com.kytyps5.android` and debug signing. It is useful as an engine-build validation artifact only; it is not an update for the existing Hub app and must not be presented as the final application.
+## In-app updater behavior
 
-## Implementation approach
+The existing KytyPS5 launcher calls the updater automatically during startup and also displays a manual **Check for updates** action.
 
-Because the engine is currently a pinned Git submodule, editing the parent repository cannot modify the upstream launcher's source files. The integration must first establish a maintained, license-compliant source location (a project-owned fork or a vendored, pinned source snapshot with full license notices). Only then should the unified Android module and updater be built together. Do not attempt to patch generated files inside a submodule during CI.
+The updater checks the repository's latest stable GitHub Release. It rejects drafts and prereleases, requires a strict three-part stable semantic version, exactly one APK asset, and a GitHub SHA-256 asset digest. Downloads are restricted to HTTPS GitHub asset hosts, every redirect is validated, APK size and content length are bounded/checked, and SHA-256 is verified before the APK is passed to Android's package installer.
+
+Android's package installer still requires the device owner to approve the installation. Silent installation is not claimed.
+
+**No public stable release has been published yet.** The updater therefore has no stable APK asset to offer at present. The repository has an active ruleset protecting `v*` tags and the current connected account cannot bypass it; the ruleset was not changed. A public release requires the repository owner to authorize a permitted release-tag creation path.
+
+## Signing identity and preservation
+
+A new dedicated PS5 Game Hub production signing key was generated and its five required Actions secrets were configured. This is a new identity; it will not update an older APK signed with a different certificate.
+
+The owner's server-side keystore and password files are:
+- `/home/opc/app-signing/ps5-game-hub-release.jks`
+- `/home/opc/app-signing/ps5-game-hub-release.password`
+
+Keep encrypted backups outside the server. Never commit, publish, or share these private files or their secret values.
+
+## Remaining verification gates
+
+- [ ] Install the signed production APK on the target Realme phone. Remove any differently signed debug installation first, if present.
+- [ ] Confirm the launcher opens and scans the selected games folder.
+- [ ] Confirm native KytyPS5 startup and Vulkan/Adreno 725 behavior on the actual device.
+- [ ] Authorize and publish the first stable GitHub Release so the updater has a real APK asset and digest.
+- [ ] Install a higher version from the in-app updater; verify Android's installer approval and preservation of app data.
+- [ ] Test owned-game compatibility before claiming any commercial PS5 game is playable.
+- [ ] Keep GPL-2.0-only and third-party notices, and satisfy applicable source-distribution obligations for distributed derived binaries.
+
+## Important limitation
+
+A successful native build and six packaged ARM64 libraries do not prove that the emulator runs correctly on every Android device or that PS5 commercial games are playable. Physical-device and owned-game testing remain mandatory.
