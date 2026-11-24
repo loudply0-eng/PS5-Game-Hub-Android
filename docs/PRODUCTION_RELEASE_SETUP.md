@@ -18,22 +18,18 @@ In the repository, open **Settings → Secrets and variables → Actions → New
 
 ### Prepare the original certificate fingerprint on Windows
 
-Use the exact APK currently installed on the phone. With USB debugging enabled and the phone connected:
+Use the exact APK currently installed on the phone. With USB debugging enabled and the phone connected, run:
 
 ```powershell
-adb shell pm path com.ps5gamehub.android
+$apkPath = (adb shell pm path com.ps5gamehub.android | Select-Object -First 1) -replace '^package:', ''
+adb pull $apkPath .\existing-hub.apk
 ```
 
-Pull the returned `base.apk` path (substitute the exact path printed by the command):
+Find Android SDK Build Tools `apksigner.bat` and inspect the APK certificate:
 
 ```powershell
-adb pull /data/app/REPLACE_WITH_RETURNED_PATH/base.apk .\existing-hub.apk
-```
-
-Run Android's `apksigner` from the Android SDK Build Tools:
-
-```powershell
-apksigner verify --verbose --print-certs .\existing-hub.apk
+$apksigner = Get-ChildItem "$env:LOCALAPPDATA\Android\Sdk\build-tools\*\apksigner.bat" | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+& $apksigner verify --verbose --print-certs .\existing-hub.apk
 ```
 
 Copy the value after `Signer #1 certificate SHA-256 digest:` into `ANDROID_SIGNING_CERT_SHA256`. If the package is not installed or its APK cannot be pulled, use the exact original APK supplied by the app publisher. Do not substitute a debug APK.
