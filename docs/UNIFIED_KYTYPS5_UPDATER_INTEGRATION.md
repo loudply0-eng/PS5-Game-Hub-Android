@@ -2,10 +2,10 @@
 
 ## Current verified status
 
-The maintained KytyPS5 fork integration has been merged into its default `android-boot-wip` branch through PR #1:
-https://github.com/loudply0-eng/KytyPS5-Android/pull/1
-
-The parent repository's preparation work has also been merged into `main` through PR #4. The full unified application, native build pipeline, and production signing workflow are proposed by parent PR #5; the integration/release-gate documentation is proposed by PR #6.
+- The maintained KytyPS5 fork integration was merged into its default `android-boot-wip` branch through [fork PR #1](https://github.com/loudply0-eng/KytyPS5-Android/pull/1).
+- Parent preparation work was merged into `main` through [PR #4](https://github.com/loudply0-eng/PS5-Game-Hub-Android/pull/4).
+- The unified application, native ARM64 build pipeline, and signed production workflow were merged into `main` through [PR #5](https://github.com/loudply0-eng/PS5-Game-Hub-Android/pull/5).
+- This PR #6 records the integration architecture, verified production artifact, updater behavior, and remaining device/release gates.
 
 ## Verified source and identity
 
@@ -46,7 +46,11 @@ The updater checks the repository's latest stable GitHub Release. It rejects dra
 
 Android's package installer still requires the device owner to approve the installation. Silent installation is not claimed.
 
-**No public stable release has been published yet.** The updater therefore has no stable APK asset to offer at present. The repository has an active ruleset protecting `v*` tags and the current connected account cannot bypass it; the ruleset was not changed. A public release requires the repository owner to authorize a permitted release-tag creation path.
+**No public stable release has been published yet.** The updater is integrated but has no public APK asset to offer until a stable GitHub Release is published.
+
+The private production artifact is version `1.0.0`. The first public release should be `v1.0.1` so an installation of that private `1.0.0` APK sees the published version as a real update. The signed release workflow now runs only for a protected `v*` tag or a deliberate manual dispatch; the manual workflow default is `1.0.1`.
+
+The repository currently has an active ruleset protecting creation, update, and deletion of `v*` tags, with no bypass actor configured. The current connected account cannot bypass this rule. The ruleset was deliberately left unchanged; the repository owner must authorize a permitted release-tag creation path before the public release can be published.
 
 ## Signing identity and preservation
 
@@ -63,8 +67,8 @@ Keep encrypted backups outside the server. Never commit, publish, or share these
 - [ ] Install the signed production APK on the target Realme phone. Remove any differently signed debug installation first, if present.
 - [ ] Confirm the launcher opens and scans the selected games folder.
 - [ ] Confirm native KytyPS5 startup and Vulkan/Adreno 725 behavior on the actual device.
-- [ ] Authorize and publish the first stable GitHub Release so the updater has a real APK asset and digest.
-- [ ] Install a higher version from the in-app updater; verify Android's installer approval and preservation of app data.
+- [ ] Authorize and publish the first stable GitHub Release `v1.0.1` so the updater has a real APK asset and digest.
+- [ ] Install the higher version from the in-app updater; verify Android's installer approval and preservation of app data.
 - [ ] Test owned-game compatibility before claiming any commercial PS5 game is playable.
 - [ ] Keep GPL-2.0-only and third-party notices, and satisfy applicable source-distribution obligations for distributed derived binaries.
 
