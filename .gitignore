@@ -16,6 +16,10 @@ local.properties
 *.dex
 
 # Signing material and private keys — never commit these
+key.properties
+keystore.properties
+secrets.properties
+.secrets/
 *.jks
 *.keystore
 *.p12
