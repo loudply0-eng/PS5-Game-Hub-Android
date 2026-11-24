@@ -38,9 +38,9 @@ jobs:
           set -Eeuo pipefail
           rm -rf "$ENGINE_DIR"
           git clone --no-checkout https://github.com/loudply0-eng/KytyPS5-Android.git "$ENGINE_DIR"
-          git -C "$ENGINE_DIR" checkout --detach bcf4a3a08acb8ab801e69facebcfcbe411f948a7
+          git -C "$ENGINE_DIR" checkout --detach dac144daa519ef7f3a0857a16d9bca7cb6289f42
           git -C "$ENGINE_DIR" submodule update --init --recursive
-          test "$(git -C "$ENGINE_DIR" rev-parse HEAD)" = "bcf4a3a08acb8ab801e69facebcfcbe411f948a7"
+          test "$(git -C "$ENGINE_DIR" rev-parse HEAD)" = "dac144daa519ef7f3a0857a16d9bca7cb6289f42"
           git -C "$ENGINE_DIR" submodule status --recursive
 
       - name: Install native build tools
