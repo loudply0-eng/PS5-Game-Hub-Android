@@ -4,18 +4,20 @@ An Android game hub and integration layer for the experimental KytyPS5 Android e
 
 ## Current state
 
-This repository currently contains a Kotlin launcher shell only:
-- Dark Android launcher UI and Storage Access Framework game-folder picker.
-- GitHub Releases update check for this hub.
-- Game launching remains disabled until the native engine is integrated and validated.
+The unified integration is in Draft review:
+- The maintained KytyPS5 Android launcher, game library, GPU-driver controls, and SDL3 `GameActivity` are preserved in the project-owned fork.
+- The in-app stable-release updater is integrated into that same launcher.
+- The production Android application ID is `com.ps5gamehub.android`.
+- The ARM64 native engine and FFmpeg compile successfully; the validation APK was independently checked for all six ELF64 AArch64 libraries.
+- A production Release workflow now builds a signed APK, verifies the signature against the existing app's SHA-256 certificate fingerprint, and uploads a signed Actions artifact. Branch builds do not publish public releases.
 
-**This repository is not yet a working PS5 emulator and cannot currently launch PS5 games.** The native KytyPS5 engine, FEXCore JIT, Vulkan/Turnip runtime, native libraries, controller path, and target-device validation are not yet integrated here.
+**No production-signed APK has been delivered yet.** The original signing keystore and the installed app's certificate fingerprint must be configured in Actions before the signed build can pass. Device install/update and game compatibility tests also remain outstanding.
 
 ## Engine selected
 
-The selected upstream engine is [tarek369/KytyPS5-Android](https://github.com/tarek369/KytyPS5-Android), branch `android-boot-wip`.
+The maintained source fork is [loudply0-eng/KytyPS5-Android](https://github.com/loudply0-eng/KytyPS5-Android), derived from [tarek369/KytyPS5-Android](https://github.com/tarek369/KytyPS5-Android), branch `android-boot-wip`.
 
-Reviewed upstream revision: `9ab8b82daf2de1f763491b005e1ed1b28f843bb7`.
+Reviewed upstream starting revision: `9ab8b82daf2de1f763491b005e1ed1b28f843bb7`. The unified app/updater work is in Draft PR [#1](https://github.com/loudply0-eng/KytyPS5-Android/pull/1).
 
 The upstream port translates PS5 x86-64 guest code through FEXCore JIT on Android ARM64 and translates graphics through Vulkan, using Mesa Turnip on supported Qualcomm Adreno GPUs. The upstream project is experimental and licensed GPL-2.0-only.
 
@@ -29,18 +31,17 @@ The upstream project's published reference device is OnePlus Pad 3 (Snapdragon 8
 
 ## Build
 
-The current launcher shell can be opened in Android Studio with JDK 17 or newer and Android SDK Platform 35. This builds only the shell, not the PS5 engine.
+The integrated Android module lives at `engine/KytyPS5-Android/android` in the parent build workspace. The reproducible workflow uses Java 21, Android SDK 36, NDK 28.2, CMake, Ninja, glslangValidator, and the pinned FFmpeg build script. The native validation workflow is not the user-facing release build.
 
-The upstream native build has a separate documented toolchain, including Android NDK 28.2, CMake, Ninja, glslangValidator, and Gradle. Follow the upstream [Android contributor guide](https://github.com/tarek369/KytyPS5-Android/blob/android-boot-wip/docs/android/CONTRIBUTING.md); do not treat this shell build as an emulator build.
+The signed production workflow builds Release, checks every native library and the original signing certificate, and uploads the APK artifact. Its source branch build does not create a public release. See [docs/PRODUCTION_RELEASE_SETUP.md](docs/PRODUCTION_RELEASE_SETUP.md) for the five required Actions secrets and exact setup instructions. The in-app updater checks the latest stable GitHub Release on startup and supports manual checks. Android always asks the user to approve installation.
 
-## Planned work
+## Remaining work
 
-1. Audit and pin upstream source, submodules, and license notices.
-2. Reproduce the upstream ARM64 native build.
-3. Package the exact native libraries, SDL glue, driver assets, and launcher contract.
-4. Integrate hub UX without breaking engine-critical components.
-5. Add CI artifacts and safe release updates.
-6. Test on Adreno 725 and publish per-game compatibility results.
+1. Configure the original keystore and installed-app certificate fingerprint as GitHub Actions secrets.
+2. Complete the signed Release build and verify its certificate matches exactly.
+3. Install over the existing app and test an in-app update on a physical Android device.
+4. Test actual owned-game compatibility on Adreno 725; publish only measured per-game results.
+5. Complete PR review/merge and authorize a protected stable release tag.
 
 ## Legal and security
 

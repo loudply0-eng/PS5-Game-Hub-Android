@@ -2,7 +2,7 @@ name: KytyPS5 Native Engine Build
 
 on:
   pull_request:
-    branches: [main]
+    branches: [feat/kytyps5-engine-integration-20261124]
     paths:
       - ".gitmodules"
       - "engine/**"
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: kyty-native-engine-build
+  group: kyty-native-engine-build-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -25,18 +25,22 @@ jobs:
       NDK_VERSION: 28.2.13676358
       ENGINE_DIR: engine/KytyPS5-Android
     steps:
-      - name: Checkout project and pinned upstream engine
+      - name: Checkout parent project source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          submodules: recursive
+          submodules: false
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify pinned engine revision
+      - name: Check out maintained unified KytyPS5 fork
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git -C "$ENGINE_DIR" rev-parse HEAD)" = "9ab8b82daf2de1f763491b005e1ed1b28f843bb7"
+          rm -rf "$ENGINE_DIR"
+          git clone --no-checkout https://github.com/loudply0-eng/KytyPS5-Android.git "$ENGINE_DIR"
+          git -C "$ENGINE_DIR" checkout --detach dac144daa519ef7f3a0857a16d9bca7cb6289f42
+          git -C "$ENGINE_DIR" submodule update --init --recursive
+          test "$(git -C "$ENGINE_DIR" rev-parse HEAD)" = "dac144daa519ef7f3a0857a16d9bca7cb6289f42"
           git -C "$ENGINE_DIR" submodule status --recursive
 
       - name: Install native build tools
