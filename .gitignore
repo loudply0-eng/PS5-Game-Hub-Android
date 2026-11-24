@@ -1,0 +1,32 @@
+# Android / Gradle build output
+.gradle/
+**/build/
+**/.gradle/
+local.properties
+
+# IDE and local workspace files
+.idea/
+*.iml
+.DS_Store
+
+# Android build artifacts
+*.apk
+*.aab
+*.apks
+*.dex
+
+# Signing material and private keys — never commit these
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+*.mobileprovision
+
+# Local environment / credentials
+.env
+.env.*
+!.env.example
+secrets/
+credentials/
