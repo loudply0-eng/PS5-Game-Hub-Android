@@ -97,11 +97,11 @@ class MainActivity : Activity() {
                     throw IllegalStateException("The latest release is not a stable published release.")
                 }
                 val tag = release.optString("tag_name")
-                val latestVersion = parseVersion(tag)
+                val latestVersion = UpdatePolicy.parseVersion(tag)
                     ?: throw IllegalStateException("Release tag is not a valid version: $tag")
-                val currentVersion = parseVersion(installedVersionName())
+                val currentVersion = UpdatePolicy.parseVersion(installedVersionName())
                     ?: throw IllegalStateException("Installed app version is invalid.")
-                if (compareVersions(latestVersion, currentVersion) <= 0) {
+                if (UpdatePolicy.compareVersions(latestVersion, currentVersion) <= 0) {
                     runOnUiThread { setBusy(false, "You are using the latest version (${installedVersionName()}).") }
                     return@thread
                 }
@@ -211,17 +211,9 @@ class MainActivity : Activity() {
     }
 
     private fun openVerifiedDownloadConnection(address: String): HttpURLConnection {
-        val allowedHosts = setOf(
-            "github.com",
-            "objects.githubusercontent.com",
-            "release-assets.githubusercontent.com"
-        )
-        var current = URL(address)
+        var current = UpdatePolicy.trustedDownloadUrl(address)
+            ?: throw SecurityException("APK URL is not on the HTTPS GitHub allowlist.")
         repeat(MAX_REDIRECTS + 1) { hop ->
-            if (current.protocol != "https" || current.host.lowercase() !in allowedHosts ||
-                current.userInfo != null || current.port !in setOf(-1, 443)) {
-                throw SecurityException("APK URL or redirect is not on the HTTPS GitHub allowlist.")
-            }
             val connection = (current.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 15000
@@ -237,7 +229,9 @@ class MainActivity : Activity() {
                 if (location.isNullOrBlank() || hop == MAX_REDIRECTS) {
                     throw SecurityException("APK download exceeded the redirect limit or omitted Location.")
                 }
-                current = URL(current, location)
+                val nextUrl = URL(current, location)
+                current = UpdatePolicy.trustedDownloadUrl(nextUrl.toString())
+                    ?: throw SecurityException("APK redirect is not on the HTTPS GitHub allowlist.")
             } else {
                 if (status !in 200..299) {
                     connection.disconnect()
@@ -328,21 +322,6 @@ class MainActivity : Activity() {
 
     private fun installedVersionName(): String =
         packageManager.getPackageInfo(packageName, 0).versionName ?: "0.0.0"
-
-    private fun parseVersion(value: String): List<Int>? {
-        val match = Regex("^v?(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")
-            .matchEntire(value.trim()) ?: return null
-        return match.groupValues.drop(1).map { it.toIntOrNull() ?: return null }
-    }
-
-    private fun compareVersions(a: List<Int>, b: List<Int>): Int {
-        for (i in 0 until maxOf(a.size, b.size)) {
-            val left = a.getOrElse(i) { 0 }
-            val right = b.getOrElse(i) { 0 }
-            if (left != right) return left.compareTo(right)
-        }
-        return 0
-    }
 
     private fun setBusy(busy: Boolean, message: String) {
         updateButton.isEnabled = !busy
