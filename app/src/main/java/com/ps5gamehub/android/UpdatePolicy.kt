@@ -30,4 +30,10 @@ internal object UpdatePolicy {
             url.userInfo != null || url.port !in setOf(-1, 443)) return null
         return url
     }
+
+    fun resolveTrustedRedirect(base: URL, location: String): URL? {
+        if (location.isBlank()) return null
+        val resolved = runCatching { URL(base, location) }.getOrNull() ?: return null
+        return trustedDownloadUrl(resolved.toString())
+    }
 }
