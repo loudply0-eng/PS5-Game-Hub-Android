@@ -223,7 +223,13 @@ class MainActivity : Activity() {
                 setRequestProperty("User-Agent", "PS5-Game-Hub-Android")
                 setRequestProperty("Accept", "application/octet-stream")
             }
-            val status = connection.responseCode
+            val status = try {
+                connection.responseCode
+            } catch (error: Exception) {
+                // Do not leave a socket open if the server fails during response negotiation.
+                connection.disconnect()
+                throw error
+            }
             if (status in 300..399) {
                 val location = connection.getHeaderField("Location")
                 connection.disconnect()
