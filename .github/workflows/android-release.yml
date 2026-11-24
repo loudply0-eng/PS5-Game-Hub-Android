@@ -1,4 +1,4 @@
-name: Signed Android Release
+name: Unified Signed Android Release
 
 on:
   push:
@@ -9,14 +9,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: android-release-${{ github.ref }}
+  group: unified-android-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   release:
-    name: Build and publish signed APK
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
+    name: Build and publish signed KytyPS5 Game Hub APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
     environment:
       name: android-production
     permissions:
@@ -24,6 +24,9 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      NDK_VERSION: 28.2.13676358
+      ENGINE_DIR: engine/KytyPS5-Android
+      ENGINE_SHA: 14cc6d9c584107c5de6ea6972d823db1df8f2332
     steps:
       - name: Validate release tag and signing secrets
         shell: bash
@@ -41,11 +44,12 @@ jobs:
           test -n "$ANDROID_KEY_PASSWORD"
           test -n "$ANDROID_KEYSTORE_BASE64" || { echo "Missing ANDROID_KEYSTORE_BASE64 secret"; exit 1; }
 
-      - name: Checkout
+      - name: Checkout release source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
           fetch-depth: 0
+          submodules: false
 
       - name: Verify release commit is on main
         shell: bash
@@ -57,28 +61,82 @@ jobs:
             exit 1
           }
 
-      - name: Set up Java 17
+      - name: Check out pinned maintained KytyPS5 source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf "$ENGINE_DIR"
+          git clone --no-checkout https://github.com/loudply0-eng/KytyPS5-Android.git "$ENGINE_DIR"
+          git -C "$ENGINE_DIR" checkout --detach "$ENGINE_SHA"
+          git -C "$ENGINE_DIR" submodule update --init --recursive
+          test "$(git -C "$ENGINE_DIR" rev-parse HEAD)" = "$ENGINE_SHA"
+
+      - name: Install native build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build glslang-tools ccache
+
+      - name: Set up Java 21
         uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
-        with:
-          gradle-version: "8.11.1"
-
-      - name: Install Android SDK packages
+      - name: Install Android SDK and NDK
+        shell: bash
         run: |
           set -Eeuo pipefail
-          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)/bin/sdkmanager"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           test -x "$SDKMANAGER"
           set +o pipefail
           yes | "$SDKMANAGER" --licenses
           set -o pipefail
-          "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0"
+          "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0" "ndk;$NDK_VERSION"
+          echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
 
-      - name: Prepare signing keystore
+      - name: Build pinned FFmpeg for Android ARM64
+        working-directory: engine/KytyPS5-Android
+        run: |
+          set -Eeuo pipefail
+          export ANDROID_NDK_HOME="$ANDROID_NDK"
+          bash scripts/android/build-ffmpeg-android.sh "$PWD/_Build/ffmpeg-android"
+
+      - name: Configure and compile native engine
+        working-directory: engine/KytyPS5-Android
+        run: |
+          set -Eeuo pipefail
+          cmake -S . -B _Build/android -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-31 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DKYTY_GUEST_CPU_FEX=ON \
+            -DKYTY_BUILD_LAUNCHER=OFF \
+            -DFFMPEG_PREBUILT_DIR="$PWD/_Build/ffmpeg-android/install" \
+            -DKYTY_BUILD_ORIGIN=Fork \
+            -DKYTY_BUILD_REPOSITORY="$GITHUB_REPOSITORY" \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          ccache --max-size=3G
+          ninja -C _Build/android kyty_emulator
+          test -s _Build/android/libmain.so
+          test -s _Build/android/3rdparty/SDL3/libSDL3.so
+          find _Build/android/3rdparty/libadrenotools/src/hook -maxdepth 1 -type f -name '*.so' -print -quit | grep -q .
+
+      - name: Stage ARM64 native libraries
+        working-directory: engine/KytyPS5-Android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ST="$RUNNER_TEMP/kyty-native"
+          mkdir -p "$ST/3rdparty/SDL3" "$ST/3rdparty/libadrenotools/src/hook"
+          STRIP="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+          test -x "$STRIP"
+          "$STRIP" --strip-debug -o "$ST/libmain.so" _Build/android/libmain.so
+          cp _Build/android/3rdparty/SDL3/libSDL3.so "$ST/3rdparty/SDL3/"
+          find _Build/android/3rdparty/libadrenotools/src/hook -maxdepth 1 -type f -name '*.so' -exec cp {} "$ST/3rdparty/libadrenotools/src/hook/" \;
+          test -s "$ST/libmain.so"
+          test -s "$ST/3rdparty/SDL3/libSDL3.so"
+
+      - name: Prepare production signing keystore
         shell: bash
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -89,33 +147,43 @@ jobs:
           test -s "$RUNNER_TEMP/android-release-keystore.jks"
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/android-release-keystore.jks" >> "$GITHUB_ENV"
 
-      - name: Build signed release APK
+      - name: Test updater and build signed unified APK
+        working-directory: engine/KytyPS5-Android/android
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
         run: |
           set -Eeuo pipefail
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
           VERSION="${GITHUB_REF_NAME#v}"
-          gradle --no-daemon --stacktrace assembleRelease \
+          ./gradlew --no-daemon --stacktrace testDebugUnitTest assembleRelease \
+            -PkytyNativeDir="$RUNNER_TEMP/kyty-native" \
             -PappVersion="$VERSION" \
             -PappVersionCode="$GITHUB_RUN_NUMBER"
           APK="app/build/outputs/apk/release/app-release.apk"
           test -s "$APK"
-          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-          test -x "$APKSIGNER"
-          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          "$AAPT" dump badging "$APK" | grep -F "package: name='com.ps5gamehub.android'"
+          "$AAPT" dump permissions "$APK" | grep -F "android.permission.REQUEST_INSTALL_PACKAGES"
+          unzip -l "$APK" | grep -E 'lib/arm64-v8a/lib(main|SDL3|hook_impl|main_hook|file_redirect_hook|gsl_alloc_hook)\.so'
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/release-certificate.txt"
           sha256sum "$APK" > "$APK.sha256"
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+        working-directory: engine/KytyPS5-Android/android
         run: |
           set -Eeuo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
           gh release create "$GITHUB_REF_NAME" \
             app/build/outputs/apk/release/app-release.apk \
             app/build/outputs/apk/release/app-release.apk.sha256 \
-            --title "PS5 Game Hub $GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "PS5 Game Hub v$VERSION" \
             --generate-notes
 
       - name: Remove signing keystore
