@@ -2,7 +2,7 @@ name: KytyPS5 Native Engine Build
 
 on:
   pull_request:
-    branches: [main]
+    branches: [feat/kytyps5-engine-integration-20261124]
     paths:
       - ".gitmodules"
       - "engine/**"
