@@ -2,19 +2,17 @@ name: Unified Signed Android Release
 
 on:
   push:
-    branches:
-      - feat/full-kytyps5-native-build-20261124
     tags:
       - "v*"
   workflow_dispatch:
     inputs:
       version:
-        description: "Stable three-part version (for example 1.0.0)"
+        description: "Stable version. Use 1.0.1 to offer an update to the privately built 1.0.0 APK."
         required: true
-        default: "1.0.0"
+        default: "1.0.1"
         type: string
       publish_release:
-        description: "Publish a public GitHub Release (requires an authorized main-branch run)"
+        description: "Publish a public GitHub Release (requires main and authorized release-tag policy)"
         required: true
         default: false
         type: boolean
@@ -58,7 +56,7 @@ jobs:
             VERSION="${GITHUB_REF_NAME#v}"
             PUBLISH_RELEASE=true
           else
-            VERSION="${RELEASE_VERSION_INPUT:-1.0.0}"
+            VERSION="${RELEASE_VERSION_INPUT:-1.0.1}"
             PUBLISH_RELEASE="${PUBLISH_RELEASE_INPUT:-false}"
           fi
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Version must look like 1.2.3"; exit 1; }
