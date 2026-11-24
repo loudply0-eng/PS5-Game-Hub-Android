@@ -33,6 +33,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingInstallFile = savedInstanceState?.getString(STATE_PENDING_INSTALL_FILE)
+            ?.takeIf { it == UPDATE_APK_FILE }
             ?.let { name -> File(File(cacheDir, UPDATE_DIRECTORY), name).takeIf { it.isFile } }
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
