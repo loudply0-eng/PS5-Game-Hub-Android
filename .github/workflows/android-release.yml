@@ -1,22 +1,34 @@
-name: Signed Android Release
+name: Unified Signed Android Release
 
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Stable version. Use 1.0.1 to offer an update to the privately built 1.0.0 APK."
+        required: true
+        default: "1.0.1"
+        type: string
+      publish_release:
+        description: "Publish a public GitHub Release (requires main and authorized release-tag policy)"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 concurrency:
-  group: android-release-${{ github.ref }}
+  group: unified-android-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   release:
-    name: Build and publish signed APK
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
+    name: Build signed KytyPS5 Game Hub production APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
     environment:
       name: android-production
     permissions:
@@ -24,61 +36,154 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      NDK_VERSION: 28.2.13676358
+      ENGINE_DIR: engine/KytyPS5-Android
+      ENGINE_SHA: dac144daa519ef7f3a0857a16d9bca7cb6289f42
     steps:
-      - name: Validate release tag and signing secrets
+      - name: Validate version, production signing secrets, and publication mode
         shell: bash
         env:
+          RELEASE_VERSION_INPUT: ${{ inputs.version }}
+          PUBLISH_RELEASE_INPUT: ${{ inputs.publish_release }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_SIGNING_CERT_SHA256: ${{ secrets.ANDROID_SIGNING_CERT_SHA256 }}
         run: |
           set -Eeuo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Tag must look like v1.2.3"; exit 1; }
-          test -n "$ANDROID_KEYSTORE_PASSWORD"
-          test -n "$ANDROID_KEY_ALIAS"
-          test -n "$ANDROID_KEY_PASSWORD"
-          test -n "$ANDROID_KEYSTORE_BASE64" || { echo "Missing ANDROID_KEYSTORE_BASE64 secret"; exit 1; }
+          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            PUBLISH_RELEASE=true
+          else
+            VERSION="${RELEASE_VERSION_INPUT:-1.0.1}"
+            PUBLISH_RELEASE="${PUBLISH_RELEASE_INPUT:-false}"
+          fi
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Version must look like 1.2.3"; exit 1; }
+          for name in ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD ANDROID_KEYSTORE_BASE64 ANDROID_SIGNING_CERT_SHA256; do
+            [[ -n "${!name:-}" ]] || { echo "Missing required Actions secret: $name"; exit 1; }
+          done
+          EXPECTED="${ANDROID_SIGNING_CERT_SHA256//:/}"
+          EXPECTED="${EXPECTED,,}"
+          [[ "$EXPECTED" =~ ^[0-9a-f]{64}$ ]] || { echo "ANDROID_SIGNING_CERT_SHA256 must be a 64-character SHA-256 fingerprint"; exit 1; }
+          if [[ "$PUBLISH_RELEASE" == "true" && "$GITHUB_REF" != refs/tags/v* && "$GITHUB_REF" != refs/heads/main ]]; then
+            echo "Public publishing from a branch is allowed only from main."
+            exit 1
+          fi
+          echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "PUBLISH_RELEASE=$PUBLISH_RELEASE" >> "$GITHUB_ENV"
+          echo "Validated release version $VERSION; publish=$PUBLISH_RELEASE"
 
-      - name: Checkout
+      - name: Checkout release source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
           fetch-depth: 0
+          submodules: false
 
-      - name: Verify release commit is on main
+      - name: Verify public release commit is on main
+        if: github.ref_type == 'tag' || inputs.publish_release == true
         shell: bash
         run: |
           set -Eeuo pipefail
           git fetch --no-tags origin main
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
-            echo "Refusing to publish: release tag commit is not contained in main."
+            echo "Refusing to publish: release source is not contained in main."
             exit 1
           }
 
-      - name: Set up Java 17
+      - name: Check out pinned maintained KytyPS5 source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf "$ENGINE_DIR"
+          git clone --no-checkout https://github.com/loudply0-eng/KytyPS5-Android.git "$ENGINE_DIR"
+          git -C "$ENGINE_DIR" checkout --detach "$ENGINE_SHA"
+          git -C "$ENGINE_DIR" submodule update --init --recursive
+          test "$(git -C "$ENGINE_DIR" rev-parse HEAD)" = "$ENGINE_SHA"
+
+      - name: Install native build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build glslang-tools ccache
+
+      - name: Set up Java 21
         uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
-        with:
-          gradle-version: "8.11.1"
-
-      - name: Install Android SDK packages
+      - name: Install Android SDK and NDK
+        shell: bash
         run: |
           set -Eeuo pipefail
-          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)/bin/sdkmanager"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           test -x "$SDKMANAGER"
           set +o pipefail
           yes | "$SDKMANAGER" --licenses
           set -o pipefail
-          "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0"
+          "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0" "ndk;$NDK_VERSION"
+          echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
 
-      - name: Prepare signing keystore
+      - name: Build pinned FFmpeg for Android ARM64
+        working-directory: engine/KytyPS5-Android
+        run: |
+          set -Eeuo pipefail
+          export ANDROID_NDK_HOME="$ANDROID_NDK"
+          bash scripts/android/build-ffmpeg-android.sh "$PWD/_Build/ffmpeg-android"
+
+      - name: Configure and compile native engine
+        working-directory: engine/KytyPS5-Android
+        run: |
+          set -Eeuo pipefail
+          cmake -S . -B _Build/android -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-31 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DKYTY_GUEST_CPU_FEX=ON \
+            -DKYTY_BUILD_LAUNCHER=OFF \
+            -DFFMPEG_PREBUILT_DIR="$PWD/_Build/ffmpeg-android/install" \
+            -DKYTY_BUILD_ORIGIN=Fork \
+            -DKYTY_BUILD_REPOSITORY="$GITHUB_REPOSITORY" \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          ccache --max-size=3G
+          ninja -C _Build/android kyty_emulator
+          test -s _Build/android/libmain.so
+          test -s _Build/android/3rdparty/SDL3/libSDL3.so
+
+      - name: Stage and verify every required ARM64 native library
+        working-directory: engine/KytyPS5-Android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ST="$RUNNER_TEMP/kyty-native"
+          HOOK_SRC="_Build/android/3rdparty/libadrenotools/src/hook"
+          mkdir -p "$ST/3rdparty/SDL3" "$ST/3rdparty/libadrenotools/src/hook"
+          STRIP="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+          READELF="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          test -x "$STRIP"
+          test -x "$READELF"
+          "$STRIP" --strip-debug -o "$ST/libmain.so" _Build/android/libmain.so
+          cp _Build/android/3rdparty/SDL3/libSDL3.so "$ST/3rdparty/SDL3/"
+          for name in libhook_impl.so libmain_hook.so libfile_redirect_hook.so libgsl_alloc_hook.so; do
+            test -s "$HOOK_SRC/$name" || { echo "Missing native library: $name"; exit 1; }
+            cp "$HOOK_SRC/$name" "$ST/3rdparty/libadrenotools/src/hook/"
+          done
+          files=(
+            "$ST/libmain.so"
+            "$ST/3rdparty/SDL3/libSDL3.so"
+            "$ST/3rdparty/libadrenotools/src/hook/libhook_impl.so"
+            "$ST/3rdparty/libadrenotools/src/hook/libmain_hook.so"
+            "$ST/3rdparty/libadrenotools/src/hook/libfile_redirect_hook.so"
+            "$ST/3rdparty/libadrenotools/src/hook/libgsl_alloc_hook.so"
+          )
+          for lib in "${files[@]}"; do
+            "$READELF" -h "$lib" | grep -Eq 'Machine:[[:space:]]+AArch64' || {
+              echo "Non-AArch64 native library: $lib"; exit 1;
+            }
+          done
+
+      - name: Prepare production signing keystore
         shell: bash
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -89,34 +194,80 @@ jobs:
           test -s "$RUNNER_TEMP/android-release-keystore.jks"
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/android-release-keystore.jks" >> "$GITHUB_ENV"
 
-      - name: Build signed release APK
+      - name: Test updater and build signed production APK
+        working-directory: engine/KytyPS5-Android/android
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_SIGNING_CERT_SHA256: ${{ secrets.ANDROID_SIGNING_CERT_SHA256 }}
+        shell: bash
         run: |
           set -Eeuo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          gradle --no-daemon --stacktrace assembleRelease \
-            -PappVersion="$VERSION" \
-            -PappVersionCode="$GITHUB_RUN_NUMBER"
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          ./gradlew --no-daemon --stacktrace testDebugUnitTest assembleRelease \
+            -PkytyNativeDir="$RUNNER_TEMP/kyty-native" \
+            -PappVersion="$RELEASE_VERSION" \
+            -PappVersionCode="$((100000 + GITHUB_RUN_NUMBER))"
           APK="app/build/outputs/apk/release/app-release.apk"
           test -s "$APK"
-          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-          test -x "$APKSIGNER"
-          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          READELF="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          "$AAPT" dump badging "$APK" | grep -F "package: name='com.ps5gamehub.android'"
+          "$AAPT" dump permissions "$APK" | grep -F "android.permission.REQUEST_INSTALL_PACKAGES"
+          for name in libmain.so libSDL3.so libhook_impl.so libmain_hook.so libfile_redirect_hook.so libgsl_alloc_hook.so; do
+            unzip -Z1 "$APK" | grep -Fxq "lib/arm64-v8a/$name" || {
+              echo "APK is missing required ARM64 library: $name"; exit 1;
+            }
+            unzip -p "$APK" "lib/arm64-v8a/$name" > "$RUNNER_TEMP/$name"
+            "$READELF" -h "$RUNNER_TEMP/$name" | grep -Eq 'Machine:[[:space:]]+AArch64' || {
+              echo "APK contains a non-AArch64 library: $name"; exit 1;
+            }
+          done
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/release-certificate.txt"
+          ACTUAL="$(sed -nE 's/.*certificate SHA-256 digest: ([0-9a-fA-F:]+).*/\1/p' "$RUNNER_TEMP/release-certificate.txt" | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          EXPECTED="${ANDROID_SIGNING_CERT_SHA256//:/}"
+          EXPECTED="${EXPECTED,,}"
+          test -n "$ACTUAL"
+          test "$ACTUAL" = "$EXPECTED" || {
+            echo "Production signing certificate mismatch; refusing to publish or upload APK."
+            exit 1
+          }
           sha256sum "$APK" > "$APK.sha256"
+          echo "Signed APK SHA-256:"
+          cat "$APK.sha256"
 
-      - name: Publish GitHub Release
+      - name: Upload signed production APK artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ps5-game-hub-production-apk-${{ github.run_number }}
+          path: |
+            engine/KytyPS5-Android/android/app/build/outputs/apk/release/app-release.apk
+            engine/KytyPS5-Android/android/app/build/outputs/apk/release/app-release.apk.sha256
+            ${{ runner.temp }}/release-certificate.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish official GitHub Release
+        if: github.ref_type == 'tag' || inputs.publish_release == true
         env:
           GH_TOKEN: ${{ github.token }}
+        working-directory: engine/KytyPS5-Android/android
+        shell: bash
         run: |
           set -Eeuo pipefail
-          gh release create "$GITHUB_REF_NAME" \
-            app/build/outputs/apk/release/app-release.apk \
-            app/build/outputs/apk/release/app-release.apk.sha256 \
-            --title "PS5 Game Hub $GITHUB_REF_NAME" \
-            --generate-notes
+          TAG="v$RELEASE_VERSION"
+          APK="app/build/outputs/apk/release/app-release.apk"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            gh release create "$TAG" "$APK" "$APK.sha256" \
+              --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "PS5 Game Hub $TAG" --generate-notes
+          else
+            gh release create "$TAG" "$APK" "$APK.sha256" \
+              --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "PS5 Game Hub $TAG" --generate-notes
+          fi
 
       - name: Remove signing keystore
         if: always()
