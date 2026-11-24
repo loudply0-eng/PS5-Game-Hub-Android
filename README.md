@@ -1,31 +1,47 @@
 # PS5 Game Hub — Android
 
-An independent Android launcher shell for experimenting with the KytyPS5 Android port.
+An Android game hub and integration layer for the experimental KytyPS5 Android engine.
 
 ## Current state
-This repository currently contains an Android application shell only:
-- Kotlin Android app and dark launcher screen
-- Android Storage Access Framework folder picker
-- Clear engine status; game launching remains disabled until native integration is implemented
 
-**This is not yet a PS5 emulator and cannot launch PS5 games.** The native KytyPS5 Android engine, FEXCore JIT, Vulkan/Turnip driver integration, controller/input layer and device validation are not included in this starter.
+This repository currently contains a Kotlin launcher shell only:
+- Dark Android launcher UI and Storage Access Framework game-folder picker.
+- GitHub Releases update check for this hub.
+- Game launching remains disabled until the native engine is integrated and validated.
+
+**This repository is not yet a working PS5 emulator and cannot currently launch PS5 games.** The native KytyPS5 engine, FEXCore JIT, Vulkan/Turnip runtime, native libraries, controller path, and target-device validation are not yet integrated here.
+
+## Engine selected
+
+The selected upstream engine is [tarek369/KytyPS5-Android](https://github.com/tarek369/KytyPS5-Android), branch `android-boot-wip`.
+
+Reviewed upstream revision: `9ab8b82daf2de1f763491b005e1ed1b28f843bb7`.
+
+The upstream port translates PS5 x86-64 guest code through FEXCore JIT on Android ARM64 and translates graphics through Vulkan, using Mesa Turnip on supported Qualcomm Adreno GPUs. The upstream project is experimental and licensed GPL-2.0-only.
+
+See [docs/ENGINE_INTEGRATION.md](docs/ENGINE_INTEGRATION.md) for the integration architecture, build phases, licensing, security rules, and device-validation gates.
 
 ## Device target
-Initial target: Realme GT Neo 5 SE, Snapdragon 7+ Gen 2 / Adreno 725 / 16 GB RAM.
-The upstream Android port reports testing on Snapdragon 8 Elite / Adreno 830. Other GPUs are untested upstream, so compatibility and performance on this phone are unknown.
+
+Initial target: Realme GT Neo 5 SE (Snapdragon 7+ Gen 2 / Adreno 725).
+
+The upstream project's published reference device is OnePlus Pad 3 (Snapdragon 8 Elite / Adreno 830 / 16 GB RAM). Upstream says other GPUs are untested. **Adreno 725 compatibility and performance are unknown until tested on the actual phone.** A successful APK build does not mean a game is playable.
 
 ## Build
-Open this project in Android Studio with JDK 17 or newer. Install Android SDK Platform 35 and allow Gradle sync, then build the `app` debug variant. A compatible Android SDK/Gradle environment is required.
+
+The current launcher shell can be opened in Android Studio with JDK 17 or newer and Android SDK Platform 35. This builds only the shell, not the PS5 engine.
+
+The upstream native build has a separate documented toolchain, including Android NDK 28.2, CMake, Ninja, glslangValidator, and Gradle. Follow the upstream [Android contributor guide](https://github.com/tarek369/KytyPS5-Android/blob/android-boot-wip/docs/android/CONTRIBUTING.md); do not treat this shell build as an emulator build.
 
 ## Planned work
-1. Audit and pin the upstream KytyPS5 Android source revision and its submodules.
-2. Follow its Android contributor guide exactly (including NDK 28.2, CMake, Ninja and Gradle).
-3. Build ARM64 native dependencies and integrate only through documented JNI/native entry points.
-4. Add compatibility checks, safe game-folder selection, controller UI and diagnostics.
-5. Test on the actual target phone before claiming any game works.
 
-## Legal and licensing
-Use only game dumps you own. This project does not include games, keys, firmware or proprietary system software. The upstream KytyPS5 Android port is GPL-2.0-only; any derived code and bundled third-party components must retain their applicable licenses. Review license obligations before distributing a combined APK.
+1. Audit and pin upstream source, submodules, and license notices.
+2. Reproduce the upstream ARM64 native build.
+3. Package the exact native libraries, SDL glue, driver assets, and launcher contract.
+4. Integrate hub UX without breaking engine-critical components.
+5. Add CI artifacts and safe release updates.
+6. Test on Adreno 725 and publish per-game compatibility results.
 
-## Upstream engine
-The Android engine is developed separately at [tarek369/KytyPS5-Android](https://github.com/tarek369/KytyPS5-Android), branch `android-boot-wip`. Its contributor guide and GPL-2.0-only terms must be followed before integrating or redistributing engine code.
+## Legal and security
+
+Use only game dumps you own. This project does not include games, saves, keys, firmware, or proprietary system software. Preserve GPL-2.0-only and third-party notices and meet the applicable source-distribution obligations when distributing derived binaries. Never commit game dumps, firmware, console keys, or signing secrets.
