@@ -12,7 +12,7 @@ Verified source facts at upstream commit `9ab8b82daf2de1f763491b005e1ed1b28f843b
 - Upstream manifest does not declare `REQUEST_INSTALL_PACKAGES` or a `FileProvider`.
 - The original upstream Gradle signing was optional and could fall back to debug signing; the maintained fork now requires the established `ANDROID_*` production signing environment for release tasks.
 - The original upstream launcher had no in-app release checker/downloader; the maintained fork now adds `InAppUpdater` to the KytyPS5 launcher while preserving the game-library UI.
-- The updater implementation is maintained in `loudply0-eng/KytyPS5-Android`, branch `feat/unified-hub-updater-20261124`, currently at `14cc6d9c584107c5de6ea6972d823db1df8f2332`.
+- The updater implementation is maintained in `loudply0-eng/KytyPS5-Android`, branch `feat/unified-hub-updater-20261124`, currently at `dac144daa519ef7f3a0857a16d9bca7cb6289f42`.
 
 ## Implemented integration architecture
 
