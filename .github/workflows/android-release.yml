@@ -23,7 +23,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: unified-android-release-${{ github.ref }}
+  group: unified-android-release-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
