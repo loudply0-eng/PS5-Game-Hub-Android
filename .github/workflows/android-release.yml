@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      - "integration/native-engine-and-auto-updater-2026-11-25"
   workflow_dispatch:
     inputs:
       version:
@@ -38,7 +40,7 @@ jobs:
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       NDK_VERSION: 28.2.13676358
       ENGINE_DIR: engine/KytyPS5-Android
-      ENGINE_SHA: dac144daa519ef7f3a0857a16d9bca7cb6289f42
+      ENGINE_SHA: 0735f7d7f153d7b28e1acb8ce499e5b0bb30f60f
     steps:
       - name: Validate version, production signing secrets, and publication mode
         shell: bash
@@ -55,6 +57,9 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
             PUBLISH_RELEASE=true
+          elif [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/integration/native-engine-and-auto-updater-2026-11-25" ]]; then
+            VERSION="1.0.2"
+            PUBLISH_RELEASE=false
           else
             VERSION="${RELEASE_VERSION_INPUT:-1.0.1}"
             PUBLISH_RELEASE="${PUBLISH_RELEASE_INPUT:-false}"
