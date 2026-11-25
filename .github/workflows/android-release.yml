@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Stable version. Use 1.0.1 to offer an update to the privately built 1.0.0 APK."
+        description: "Stable version for a signed production build."
         required: true
-        default: "1.0.1"
+        default: "1.0.3"
         type: string
       publish_release:
         description: "Publish a public GitHub Release (requires main and authorized release-tag policy)"
@@ -40,7 +40,7 @@ jobs:
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       NDK_VERSION: 28.2.13676358
       ENGINE_DIR: engine/KytyPS5-Android
-      ENGINE_SHA: 0735f7d7f153d7b28e1acb8ce499e5b0bb30f60f
+      ENGINE_SHA: 5d9139e8dff420fc01b51229a29aabb52543c78f
     steps:
       - name: Validate version, production signing secrets, and publication mode
         shell: bash
@@ -58,7 +58,7 @@ jobs:
             VERSION="${GITHUB_REF_NAME#v}"
             PUBLISH_RELEASE=true
           elif [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/integration/native-engine-and-auto-updater-2026-11-25" ]]; then
-            VERSION="1.0.2"
+            VERSION="1.0.3"
             PUBLISH_RELEASE=false
           else
             VERSION="${RELEASE_VERSION_INPUT:-1.0.1}"
