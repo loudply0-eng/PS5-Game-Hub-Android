@@ -6,12 +6,13 @@ on:
       - "v*"
     branches:
       - "integration/native-engine-and-auto-updater-2026-11-25"
+      - "main"
   workflow_dispatch:
     inputs:
       version:
         description: "Stable version for a signed production build."
         required: true
-        default: "1.0.3"
+        default: "1.0.5"
         type: string
       publish_release:
         description: "Publish a public GitHub Release (requires main and authorized release-tag policy)"
@@ -28,6 +29,7 @@ concurrency:
 
 jobs:
   release:
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/integration/native-engine-and-auto-updater-2026-11-25' || (github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, '[release:v1.0.5:2026-11-27]'))
     name: Build signed KytyPS5 Game Hub production APK
     runs-on: ubuntu-24.04
     timeout-minutes: 240
@@ -40,13 +42,14 @@ jobs:
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       NDK_VERSION: 28.2.13676358
       ENGINE_DIR: engine/KytyPS5-Android
-      ENGINE_SHA: afab56f604a476751b7bcf1f362f1f71d5925372
+      ENGINE_SHA: 23e45293551c36d4e6f5707da8f5471cddd1329e
     steps:
       - name: Validate version, production signing secrets, and publication mode
         shell: bash
         env:
           RELEASE_VERSION_INPUT: ${{ inputs.version }}
           PUBLISH_RELEASE_INPUT: ${{ inputs.publish_release }}
+          RELEASE_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -60,6 +63,9 @@ jobs:
           elif [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/integration/native-engine-and-auto-updater-2026-11-25" ]]; then
             VERSION="1.0.3"
             PUBLISH_RELEASE=false
+          elif [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" && "$RELEASE_COMMIT_MESSAGE" == "[release:v1.0.5:2026-11-27]"* ]]; then
+            VERSION="1.0.5"
+            PUBLISH_RELEASE=true
           else
             VERSION="${RELEASE_VERSION_INPUT:-1.0.1}"
             PUBLISH_RELEASE="${PUBLISH_RELEASE_INPUT:-false}"
@@ -87,7 +93,7 @@ jobs:
           submodules: false
 
       - name: Verify public release commit is on main
-        if: github.ref_type == 'tag' || inputs.publish_release == true
+        if: github.ref_type == 'tag' || inputs.publish_release == true || (github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, '[release:v1.0.5:2026-11-27]'))
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -255,7 +261,7 @@ jobs:
           retention-days: 30
 
       - name: Publish official GitHub Release
-        if: github.ref_type == 'tag' || inputs.publish_release == true
+        if: github.ref_type == 'tag' || inputs.publish_release == true || (github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, '[release:v1.0.5:2026-11-27]'))
         env:
           GH_TOKEN: ${{ github.token }}
         working-directory: engine/KytyPS5-Android/android
