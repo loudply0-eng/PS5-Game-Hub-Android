@@ -14,7 +14,7 @@ on:
         default: "1.0.4"
         type: string
       publish_release:
-        description: "Publish a public GitHub Release (requires main and authorized release-tag policy)"
+        description: "Publish the signed stable GitHub Release from the verified integration branch or main."
         required: true
         default: false
         type: boolean
@@ -59,7 +59,7 @@ jobs:
             PUBLISH_RELEASE=true
           elif [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/integration/native-engine-and-auto-updater-2026-11-25" ]]; then
             VERSION="1.0.4"
-            PUBLISH_RELEASE=false
+            PUBLISH_RELEASE=true
           else
             VERSION="${RELEASE_VERSION_INPUT:-1.0.1}"
             PUBLISH_RELEASE="${PUBLISH_RELEASE_INPUT:-false}"
@@ -71,8 +71,8 @@ jobs:
           EXPECTED="${ANDROID_SIGNING_CERT_SHA256//:/}"
           EXPECTED="${EXPECTED,,}"
           [[ "$EXPECTED" =~ ^[0-9a-f]{64}$ ]] || { echo "ANDROID_SIGNING_CERT_SHA256 must be a 64-character SHA-256 fingerprint"; exit 1; }
-          if [[ "$PUBLISH_RELEASE" == "true" && "$GITHUB_REF" != refs/tags/v* && "$GITHUB_REF" != refs/heads/main ]]; then
-            echo "Public publishing from a branch is allowed only from main."
+          if [[ "$PUBLISH_RELEASE" == "true" && "$GITHUB_REF" != refs/tags/v* && "$GITHUB_REF" != refs/heads/main && "$GITHUB_REF" != refs/heads/integration/native-engine-and-auto-updater-2026-11-25 ]]; then
+            echo "Public publishing is allowed only from main, a version tag, or the verified integration branch."
             exit 1
           fi
           echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
@@ -86,16 +86,24 @@ jobs:
           fetch-depth: 0
           submodules: false
 
-      - name: Verify public release commit is on main
-        if: github.ref_type == 'tag' || inputs.publish_release == true
+      - name: Verify public release source is on an authorized ref
+        if: github.ref_type == 'tag' || inputs.publish_release == true || github.ref == 'refs/heads/integration/native-engine-and-auto-updater-2026-11-25'
         shell: bash
         run: |
           set -Eeuo pipefail
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
-            echo "Refusing to publish: release source is not contained in main."
-            exit 1
-          }
+          if [[ "$GITHUB_REF" == "refs/heads/integration/native-engine-and-auto-updater-2026-11-25" ]]; then
+            git fetch --no-tags origin "$GITHUB_REF_NAME"
+            git merge-base --is-ancestor "$GITHUB_SHA" "origin/$GITHUB_REF_NAME" || {
+              echo "Refusing to publish: source commit is not contained in the verified integration branch."
+              exit 1
+            }
+          else
+            git fetch --no-tags origin main
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+              echo "Refusing to publish: release source is not contained in main."
+              exit 1
+            }
+          fi
 
       - name: Check out pinned maintained KytyPS5 source
         shell: bash
@@ -255,7 +263,7 @@ jobs:
           retention-days: 30
 
       - name: Publish official GitHub Release
-        if: github.ref_type == 'tag' || inputs.publish_release == true
+        if: github.ref_type == 'tag' || inputs.publish_release == true || github.ref == 'refs/heads/integration/native-engine-and-auto-updater-2026-11-25'
         env:
           GH_TOKEN: ${{ github.token }}
         working-directory: engine/KytyPS5-Android/android
