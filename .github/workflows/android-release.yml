@@ -40,7 +40,7 @@ jobs:
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       NDK_VERSION: 28.2.13676358
       ENGINE_DIR: engine/KytyPS5-Android
-      ENGINE_SHA: 428d78f048d378a434230417eeb6f7bdd407cd1e
+      ENGINE_SHA: d1282e8c709d9a7d96e143330de8123d9881ee81
     steps:
       - name: Validate version, production signing secrets, and publication mode
         shell: bash
